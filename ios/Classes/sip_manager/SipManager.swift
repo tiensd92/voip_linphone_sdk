@@ -90,6 +90,15 @@ class SipManager {
                         self.timeStartStreamingRunning = 0
                         break
                     case .Error:
+                        if let uuidString = call.params?.getCustomHeader(headerName: "X-UUID"), let uuid = UUID.init(uuidString: uuidString)  {
+                            let callController = CXCallController()
+                            let endCallAction = CXEndCallAction(call: uuid)
+                            let transaction = CXTransaction(action: endCallAction)
+                            callController.request(transaction) { _ in
+                                
+                            }
+                        }
+                        
                         self.sendEvent(eventName: EventError, body: ["message": message])
                         break
                     default:
@@ -164,7 +173,7 @@ class SipManager {
         mCore.defaultAccount = account
     }
     
-    func call(recipient: String, completion: ((UUID, String) -> Void)?, onError: ((FlutterError) -> Void)?) {
+    func call(recipient: String, completion: ((Call, String) -> Void)?, onError: ((FlutterError) -> Void)?) {
         NSLog("Try to call")
         do {
             // As for everything we need to get the SIP URI of the remote and convert it sto an Address
@@ -184,15 +193,19 @@ class SipManager {
             // We can now configure it
             // Here we ask for no encryption but we could ask for ZRTP/SRTP/DTLS
             params.mediaEncryption = MediaEncryption.None
+            params.addCustomHeader(headerName: "X-UUID", headerValue: UUID().uuidString)
             
             // If we wanted to start the call with video directly
             //params.videoEnabled = true
             
             // Finally we start the call
-            let _ = mCore.inviteAddressWithParams(addr: remoteAddress, params: params)
-            // result("Call successful")
-            NSLog("Call successful")
-            completion?(UUID(), recipient)
+            if let call = mCore.inviteAddressWithParams(addr: remoteAddress, params: params) {
+                completion?(call, recipient)
+                NSLog("Call successful")
+            } else {
+                NSLog("Create Call failed")
+                onError?(FlutterError(code: "500", message: "Create Call failed", details: nil))
+            }
         } catch {
             NSLog(error.localizedDescription)
             onError?(FlutterError(code: "500", message: error.localizedDescription, details: nil))

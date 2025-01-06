@@ -9,7 +9,6 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
     static var eventSink: FlutterEventSink?
     private var provider: CXProvider?
     private var voipRegistry: PKPushRegistry?
-    private let callController = CXCallController()
     
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = VoipLinphoneSdkPlugin()
@@ -40,17 +39,21 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             break
         case "call":
             if let arguments = call.arguments as? [String:Any], let phoneNumber = arguments["recipient"] as? String {
-                sipManager.call(recipient: phoneNumber, completion: { uuid, caller in
-                    let handle = CXHandle(type: .generic, value: caller)
-                    let startCallAction = CXStartCallAction(call: uuid, handle: handle)
-                    let transaction = CXTransaction(action: startCallAction)
-                    self.callController.request(transaction) { error in
-                        if let error = error {
-                            NSLog("Error requesting CXStartCallAction transaction: \(error)")
-                            result(FlutterError(code: "500", message: "Error requesting CXStartCallAction transaction: \(error)", details: nil))
-                        } else {
-                            NSLog("Requested CXStartCallAction transaction successfully")
-                            result(true)
+                sipManager.call(recipient: phoneNumber, completion: { call, caller in
+                    if let uuidString = call.params?.getCustomHeader(headerName: "X-UUID"), let uuid = UUID.init(uuidString: uuidString) {
+                        let handle = CXHandle(type: .generic, value: caller)
+                        
+                        let startCallAction = CXStartCallAction(call: uuid, handle: handle)
+                        let transaction = CXTransaction(action: startCallAction)
+                        let callController = CXCallController()
+                        callController.request(transaction) { error in
+                            if let error = error {
+                                NSLog("Error requesting CXStartCallAction transaction: \(error)")
+                                result(FlutterError(code: "500", message: "Error requesting CXStartCallAction transaction: \(error)", details: nil))
+                            } else {
+                                NSLog("Requested CXStartCallAction transaction successfully")
+                                result(true)
+                            }
                         }
                     }
                 }, onError: { error in
@@ -161,7 +164,7 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         UNUserNotificationCenter.current().delegate = self
         requestNotificationAuthorization()
         
-        let config = CXProviderConfiguration(localizedName: "Ahihi")
+        let config = CXProviderConfiguration(localizedName: "2ndPhone")
         config.supportsVideo = false
         config.supportedHandleTypes = [.generic]
         config.maximumCallsPerCallGroup = 1
