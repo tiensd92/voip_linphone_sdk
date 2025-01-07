@@ -173,14 +173,14 @@ class SipManager {
         mCore.defaultAccount = account
     }
     
-    func call(recipient: String, completion: ((Call, String) -> Void)?, onError: ((FlutterError) -> Void)?) {
+    func call(recipient: String, result: FlutterResult) {
         NSLog("Try to call")
         do {
             // As for everything we need to get the SIP URI of the remote and convert it sto an Address
             let domain: String? = mCore.defaultAccount?.params?.domain
             if (domain == nil) {
                 NSLog("Can't create sip uri")
-                onError?(FlutterError(code: "404", message: "Can't create sip uri", details: nil))
+                result(FlutterError(code: "500", message: "Can't create sip uri", details: nil))
                 return
             }
             let sipUri = String("sip:" + recipient + "@" + domain!)
@@ -200,15 +200,15 @@ class SipManager {
             
             // Finally we start the call
             if let call = mCore.inviteAddressWithParams(addr: remoteAddress, params: params) {
-                completion?(call, recipient)
                 NSLog("Call successful")
+                result(true)
             } else {
                 NSLog("Create Call failed")
-                onError?(FlutterError(code: "500", message: "Create Call failed", details: nil))
+                result(FlutterError(code: "500", message: "Create Call failed", details: nil))
             }
         } catch {
             NSLog(error.localizedDescription)
-            onError?(FlutterError(code: "500", message: error.localizedDescription, details: nil))
+            result(FlutterError(code: "500", message: error.localizedDescription, details: nil))
         }
     }
     
@@ -374,20 +374,22 @@ class SipManager {
         }
     }
     
-    func sendDTMF(dtmf: String) throws {
+    func sendDTMF(dtmf: String, result: FlutterResult) {
         do {
             let coreCall = mCore.currentCall
             if(coreCall == nil) {
                 NSLog("Current call not found")
-                throw SipError.exception(message: "Current call not found")
+                result(FlutterError(code: "500", message: "Current call not found", details: nil))
+                return
             }
             
             // Send IVR
             try coreCall!.sendDtmf(dtmf: dtmf.utf8CString[0])
             NSLog("Send DTMF successful")
+            result(true)
         } catch {
             NSLog(error.localizedDescription)
-            throw error
+            result(FlutterError(code: "500", message: error.localizedDescription, details: nil))
         }
     }
     
@@ -419,13 +421,18 @@ class SipManager {
         }
     }
     
-    func toggleMic(isEnable: Bool) throws {
-        if let _ = mCore.currentCall {
-            mCore.micEnabled = isEnable
-        } else {
-            throw SipError.exception(message: "Current call not found")
+    func toggleMic(result: FlutterResult) {
+        let coreCall = mCore.currentCall
+        if(coreCall == nil) {
+            result(FlutterError(code: "404", message: "Current call not found", details: nil))
+            return
         }
+        
+        mCore.micEnabled = !mCore.micEnabled
+        result(mCore.micEnabled)
     }
+    
+    
     
     func refreshSipAccount(result: FlutterResult? = nil) {
         mCore.refreshRegisters()

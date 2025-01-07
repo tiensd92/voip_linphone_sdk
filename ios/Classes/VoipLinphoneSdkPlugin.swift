@@ -39,26 +39,7 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             break
         case "call":
             if let arguments = call.arguments as? [String:Any], let phoneNumber = arguments["recipient"] as? String {
-                sipManager.call(recipient: phoneNumber, completion: { call, caller in
-                    if let uuidString = call.params?.getCustomHeader(headerName: "X-UUID"), let uuid = UUID.init(uuidString: uuidString) {
-                        let handle = CXHandle(type: .generic, value: caller)
-                        
-                        let startCallAction = CXStartCallAction(call: uuid, handle: handle)
-                        let transaction = CXTransaction(action: startCallAction)
-                        let callController = CXCallController()
-                        callController.request(transaction) { error in
-                            if let error = error {
-                                NSLog("Error requesting CXStartCallAction transaction: \(error)")
-                                result(FlutterError(code: "500", message: "Error requesting CXStartCallAction transaction: \(error)", details: nil))
-                            } else {
-                                NSLog("Requested CXStartCallAction transaction successfully")
-                                result(true)
-                            }
-                        }
-                    }
-                }, onError: { error in
-                    result(error)
-                })
+                sipManager.call(recipient: phoneNumber, result: result)
             } else {
                 result(FlutterError(code: "404", message: "Recipient is not valid", details: nil))
             }
@@ -86,20 +67,20 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         case "resume":
             sipManager.resume(result: result)
             break
-        /*case "sendDTMF":
+        case "sendDTMF":
             if let arguments = call.arguments as? [String:Any], let dtmf = arguments["recipient"] as? String {
                 sipManager.sendDTMF(dtmf: dtmf, result: result)
             } else {
                 result(FlutterError(code: "404", message: "DTMF is not valid", details: nil))
             }
             
-            break*/
+            break
         case "toggleSpeaker":
             sipManager.toggleSpeaker(result: result)
             break
-        /*case "toggleMic":
+        case "toggleMic":
             sipManager.toggleMic(result: result)
-            break*/
+            break
         case "refreshSipAccount":
             sipManager.refreshSipAccount(result: result)
             break
@@ -170,7 +151,6 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         config.maximumCallsPerCallGroup = 1
         config.maximumCallGroups = 1
         self.provider = CXProvider(configuration: config)
-        self.provider?.setDelegate(self, queue: nil)
     }
 }
 
@@ -223,89 +203,4 @@ extension VoipLinphoneSdkPlugin: UNUserNotificationCenterDelegate {
         print(">> willPresent: \(notification)")
         completionHandler([.alert, .sound, .badge])
     }
-}
-
-extension VoipLinphoneSdkPlugin: CXProviderDelegate {
-    public func providerDidReset(_ provider: CXProvider) {
-        self.provider = provider
-    }
-    
-    public func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
-        do {
-            try sipManager.toggleMic(isEnable: !action.isMuted)
-            action.fulfill()
-        } catch let error {
-            switch error {
-            case SipError.exception(let message) :
-                let data = ["event": EventError, "body": ["message": message]] as [String: Any]
-                Self.eventSink?(data)
-                break
-            default:
-                break
-            }
-            action.fail()
-        }
-    }
-    
-    public func provider(_ provider: CXProvider, perform action: CXPlayDTMFCallAction) {
-        do {
-            try sipManager.sendDTMF(dtmf: action.digits)
-            //let data = ["event": Even, "body": ["message": message]] as [String: Any]
-            //Self.eventSink?(data)
-            action.fulfill()
-        } catch let error {
-            switch error {
-            case SipError.exception(message: let message) :
-                let data = ["event": EventError, "body": ["message": message]] as [String: Any]
-                Self.eventSink?(data)
-                break
-            default:
-                let data = ["event": EventError, "body": ["message": error.localizedDescription]] as [String: Any]
-                Self.eventSink?(data)
-                break
-            }
-            action.fail()
-        }
-    }
-    
-    public func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        
-    }
-    
-    public func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
-        configureAudioSession()
-        action.fulfill()
-    }
-    
-    public func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-        //sipManager.answer(result: <#T##(Any?) -> Void#>)
-        configureAudioSession()
-        action.fulfill()
-    }
-    
-    public func provider(_ provider: CXProvider, perform action: CXSetHeldCallAction) {
-        if action.isOnHold {
-            //sipManager.hangup(result: <#T##(Any?) -> Void#>)
-        }
-    }
-    
-    public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
-        //sipManager.reject(result: <#T##(Any?) -> Void#>)
-    }
-    
-    func configureAudioSession() {
-        let audioSession = AVAudioSession.sharedInstance()
-        do {
-            if audioSession.category != .playAndRecord {
-                try audioSession.setCategory(AVAudioSession.Category.playAndRecord,
-                                             options: AVAudioSession.CategoryOptions.allowBluetooth)
-            }
-            if audioSession.mode != .voiceChat {
-                try audioSession.setMode(.voiceChat)
-            }
-        } catch {
-            NSLog("Error configuring AVAudioSession: \(error.localizedDescription)")
-        }
-    }
-    
 }
