@@ -76,7 +76,11 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             
             break
         case "toggleSpeaker":
-            sipManager.toggleSpeaker(result: result)
+            if let arguments = call.arguments as? [String:Any], let kind = arguments["kind"] as? String {
+                sipManager.toggleSpeaker(kind: kind, result: result)
+            } else {
+                result(FlutterError(code: "404", message: "Audio Device Kind is not valid", details: nil))
+            }
             break
         case "toggleMic":
             sipManager.toggleMic(result: result)
@@ -111,6 +115,10 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         case "registerPush":
             registerPush()
             break
+        case "audioDevices":
+            sipManager.getAudioDevices(result: result)
+        case "currentAudioDevice":
+            sipManager.getCurrentAudioDevice(result: result)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -160,7 +168,7 @@ extension VoipLinphoneSdkPlugin: PKPushRegistryDelegate {
         if type == .voIP {
             let voipToken = registry.pushToken(for: .voIP)?.map { String(format: "%02X", $0) }.joined() ?? ""
             print("Voip token: \(voipToken)")
-            let data = ["event": EventPushToken, "body": ["voip_token": voipToken]] as [String: Any]
+            let data = ["event": SipEvent.PushToken.rawValue, "body": ["voip_token": voipToken]] as [String: Any]
             Self.eventSink?(data)
         }
     }
@@ -170,7 +178,7 @@ extension VoipLinphoneSdkPlugin: PKPushRegistryDelegate {
             let uuid = UUID()
             let caller = payload.dictionaryPayload["from_number"] as? String ?? ""
             let callee = payload.dictionaryPayload["to_number"] as? String ?? ""
-            let data = ["event": EventPushReceive, "body": ["call_id": "\(uuid)", "from_number": caller, "callee": callee]] as [String: Any]
+            let data = ["event": SipEvent.PushReceive.rawValue, "body": ["call_id": "\(uuid)", "from_number": caller, "callee": callee]] as [String: Any]
             Self.eventSink?(data)
             
             reportIncommingCall(uuid, caller, completion: completion)

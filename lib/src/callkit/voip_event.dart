@@ -1,11 +1,13 @@
 import 'callkit.dart';
 
 class VoipEvent {
-  final SipEvent type;
+  final SipEvent? event;
+  final RegistrationState? state;
   final dynamic body;
 
   VoipEvent({
-    required this.type,
+    this.event,
+    this.state,
     this.body,
   });
 }

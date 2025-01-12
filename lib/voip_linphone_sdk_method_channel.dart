@@ -45,12 +45,23 @@ class MethodChannelVoipLinphoneSdk extends VoipLinphoneSdkPlatform {
   void _listener(dynamic event) {
     final eventName = event['event'] as String;
 
-    final eventType = SipEvent.values.firstWhere(
-        (event) => event.value == eventName,
-        orElse: () => SipEvent.error);
+    SipEvent? eventType;
+    RegistrationState? state;
+
+    try {
+      eventType =
+          SipEvent.values.firstWhere((event) => event.value == eventName);
+    } catch (_) {}
+
+    try {
+      state = RegistrationState.values
+          .firstWhere((event) => event.value == eventName);
+    } catch (_) {}
+
     _eventStreamController.add(
       VoipEvent(
-        type: eventType,
+        event: eventType,
+        state: state,
         body: event['body'],
       ),
     );
@@ -94,12 +105,16 @@ class MethodChannelVoipLinphoneSdk extends VoipLinphoneSdkPlatform {
 
   @override
   Future<bool> sendDTMF(String dtmf) async {
-    return await methodChannel.invokeMethod('sendDTMF', {"recipient": dtmf});
+    return await methodChannel.invokeMethod('sendDTMF', {
+      "recipient": dtmf,
+    });
   }
 
   @override
-  Future<bool> toggleSpeaker() async {
-    return await methodChannel.invokeMethod('toggleSpeaker');
+  Future<bool> toggleSpeaker(String audioDevice) async {
+    return await methodChannel.invokeMethod('toggleSpeaker', {
+      'kind': audioDevice,
+    });
   }
 
   @override
@@ -145,5 +160,15 @@ class MethodChannelVoipLinphoneSdk extends VoipLinphoneSdkPlatform {
   @override
   Future<void> registerPush() async {
     return await methodChannel.invokeMethod('registerPush');
+  }
+
+  @override
+  Future<Map<Object?, Object?>> getAudioDevices() async {
+    return await methodChannel.invokeMethod('audioDevices');
+  }
+
+  @override
+  Future<String?> getCurrentAudioDevice() async {
+    return await methodChannel.invokeMethod('currentAudioDevice');
   }
 }

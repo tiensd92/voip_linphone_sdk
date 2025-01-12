@@ -27,7 +27,8 @@ class SipManager {
                     state: Call.State?,
                     message: String
                 ) in
-                    NSLog("state: \(String(describing: state)) - \(message)")
+                    print("state: \(state) - message: \(message)")
+                    
                     switch (state) {
                     case .IncomingReceived:
                         // Immediately hang up when we receive a call. There's nothing inherently wrong with this
@@ -35,7 +36,7 @@ class SipManager {
                         // try! call.terminate()
                         let ext = core.defaultAccount?.contactAddress?.username ?? ""
                         let phoneNumber = call.remoteAddress?.username ?? ""
-                        self.sendEvent(eventName: EventRing, body: ["extension": ext, "phoneNumber": phoneNumber, "callType": CallType.inbound.rawValue])
+                        self.sendEvent(eventName: SipEvent.Ring.rawValue, body: ["extension": ext, "phoneNumber": phoneNumber, "callType": CallType.inbound.rawValue])
                         break
                     case .OutgoingInit:
                         // First state an outgoing call will go through
@@ -44,12 +45,14 @@ class SipManager {
                         // First state an outgoing call will go through
                         let ext = core.defaultAccount?.contactAddress?.username ?? ""
                         let phoneNumber = call.remoteAddress?.username ?? ""
-                        self.sendEvent(eventName: EventRing, body: ["extension": ext, "phoneNumber": phoneNumber, "callType": CallType.outbound.rawValue])
+                        self.sendEvent(eventName: SipEvent.Ring.rawValue, body: ["extension": ext, "phoneNumber": phoneNumber, "callType": CallType.outbound.rawValue])
                         break
                     case .OutgoingRinging:
                         // Once remote accepts, ringing will commence (180 response)
                         break
                     case .Connected:
+                        let callId = call.callLog?.callId ?? ""
+                        self.sendEvent(eventName: SipEvent.Connected.rawValue, body: ["callId": callId])
                         break
                     case .StreamsRunning:
                         // This state indicates the call is active.
@@ -61,14 +64,14 @@ class SipManager {
                         }
                         self.isPause = false
                         let callId = call.callLog?.callId ?? ""
-                        self.sendEvent(eventName: EventUp, body: ["callId": callId])
+                        self.sendEvent(eventName: SipEvent.Up.rawValue, body: ["callId": callId])
                         break
                     case .Paused:
                         self.isPause = true
-                        self.sendEvent(eventName: EventPaused, body: nil)
+                        self.sendEvent(eventName: SipEvent.Paused.rawValue, body: nil)
                         break
                     case .Resuming:
-                        self.sendEvent(eventName: EventResuming, body: nil)
+                        self.sendEvent(eventName: SipEvent.Resuming.rawValue, body: nil)
                         break
                     case .PausedByRemote:
                         break
@@ -81,25 +84,16 @@ class SipManager {
                         if(self.isMissed(callLog: call.callLog)) {
                             let callee = call.remoteAddress?.username ?? ""
                             let totalMissed = core.missedCallsCount
-                            self.sendEvent(eventName: EventMissed, body: ["phoneNumber": callee, "totalMissed": totalMissed])
+                            self.sendEvent(eventName: SipEvent.Missed.rawValue, body: ["phoneNumber": callee, "totalMissed": totalMissed])
                         }
                         break
                     case .End:
                         let duration = self.timeStartStreamingRunning == 0 ? 0 : Int64(Date().timeIntervalSince1970 * 1000) - self.timeStartStreamingRunning
-                        self.sendEvent(eventName: EventHangup, body: ["duration": duration])
+                        self.sendEvent(eventName: SipEvent.Hangup.rawValue, body: ["duration": duration])
                         self.timeStartStreamingRunning = 0
                         break
                     case .Error:
-                        if let uuidString = call.params?.getCustomHeader(headerName: "X-UUID"), let uuid = UUID.init(uuidString: uuidString)  {
-                            let callController = CXCallController()
-                            let endCallAction = CXEndCallAction(call: uuid)
-                            let transaction = CXTransaction(action: endCallAction)
-                            callController.request(transaction) { _ in
-                                
-                            }
-                        }
-                        
-                        self.sendEvent(eventName: EventError, body: ["message": message])
+                        self.sendEvent(eventName: SipEvent.Error.rawValue, body: ["message": message])
                         break
                     default:
                         break
@@ -114,8 +108,7 @@ class SipManager {
                 //                    self.sendEvent(withName: "AudioDevicesChanged", body: ["audioOutputType": audioOutputType])
                 //                },
                 onAccountRegistrationStateChanged: { (core: Core, account: Account, state: RegistrationState, message: String) in
-                    NSLog("state: \(state), message: \(message)")
-                    self.sendEvent(eventName: EventAccountRegistrationStateChanged, body: ["registrationState": state.rawValue >= RegisterSipState.allCases.count ? RegisterSipState.Failed.rawValue : RegisterSipState.allCases[state.rawValue].rawValue, "message": message])
+                    self.sendEvent(eventName: state.name, body: ["message": message])
                 }
             )
         } catch {
@@ -393,32 +386,23 @@ class SipManager {
         }
     }
     
-    func toggleSpeaker(result: FlutterResult) {
+    func toggleSpeaker(kind: String, result: FlutterResult) {
         let coreCall = mCore.currentCall
         if(coreCall == nil) {
             return result(FlutterError(code: "404", message: "Current call not found", details: nil))
         }
-        let currentAudioDevice = coreCall!.outputAudioDevice
-        let speakerEnabled = currentAudioDevice?.type == AudioDevice.Kind.Speaker
         
-        // We can get a list of all available audio devices using
-        // Note that on tablets for example, there may be no Earpiece device
+        let currentAudioDevice = coreCall!.outputAudioDevice
+        let audioDeviceKind = AudioDevice.Kind.allValues.first{ $0.name == kind} ?? .Unknown
+        
         for audioDevice in mCore.audioDevices {
-            // For IOS, the Speaker is an exception, Linphone cannot differentiate Input and Output.
-            // This means that the default output device, the earpiece, is paired with the default phone microphone.
-            // Setting the output audio device to the microphone will redirect the sound to the earpiece.
-            if (speakerEnabled && audioDevice.type == AudioDevice.Kind.Microphone) {
-                coreCall!.outputAudioDevice = audioDevice
-                return result(false)
-            } else if (!speakerEnabled && audioDevice.type == AudioDevice.Kind.Speaker) {
+            if audioDevice.type == audioDeviceKind {
                 coreCall!.outputAudioDevice = audioDevice
                 return result(true)
             }
-            /* If we wanted to route the audio to a bluetooth headset
-             else if (audioDevice.type == AudioDevice.Type.Bluetooth) {
-             core.currentCall?.outputAudioDevice = audioDevice
-             }*/
         }
+        
+        result(FlutterError(code: "404", message: "Audio Device Kind not found", details: nil))
     }
     
     func toggleMic(result: FlutterResult) {
@@ -431,8 +415,6 @@ class SipManager {
         mCore.micEnabled = !mCore.micEnabled
         result(mCore.micEnabled)
     }
-    
-    
     
     func refreshSipAccount(result: FlutterResult? = nil) {
         mCore.refreshRegisters()
@@ -485,7 +467,7 @@ class SipManager {
     func getSipReistrationState(result: FlutterResult) {
         let state = mCore.defaultAccount?.state
         if(state != nil) {
-            result(RegisterSipState.allCases[state!.rawValue].rawValue)
+            result(state?.name)
         } else {
             result(FlutterError(code: "404", message: "Register state not found", details: nil))
         }
@@ -507,5 +489,55 @@ class SipManager {
     
     private func isMissed(callLog: CallLog?) -> Bool {
         return (callLog?.dir == Call.Dir.Incoming && callLog?.status == Call.Status.Missed)
+    }
+    
+    func getAudioDevices(result: FlutterResult) {
+        let audioDevices = mCore.audioDevices
+        var mapAudioDevices = [String : String]()
+        for audioDevice in audioDevices {
+            mapAudioDevices[audioDevice.type.name] = audioDevice.deviceName
+        }
+        
+        result(mapAudioDevices)
+    }
+    
+    func getCurrentAudioDevice(result: FlutterResult) {
+        let audioDevice = mCore.currentCall?.outputAudioDevice?.type.name
+        result(audioDevice)
+    }
+}
+
+extension AudioDevice.Kind {
+    var name: String {
+        switch(self) {
+        case .Unknown:
+            return "Unknown"
+        case .Microphone:
+            return "Microphone"
+        case .Earpiece:
+            return "Earpiece"
+        case .Speaker:
+            return "Speaker"
+        case .Bluetooth:
+            return "Bluetooth"
+        case .BluetoothA2DP:
+            return "BluetoothA2DP"
+        case .Telephony:
+            return "Telephony"
+        case .AuxLine:
+            return "AuxLine"
+        case .GenericUsb:
+            return "GenericUsb"
+        case .Headset:
+            return "Headset"
+        case .Headphones:
+            return "Headphones"
+        case .HearingAid:
+            return "HearingAid"
+        }
+    }
+    
+    static var allValues: [AudioDevice.Kind] {
+        return [.Unknown, .Microphone, .Earpiece, .Speaker, .Bluetooth, .BluetoothA2DP, .Telephony, .AuxLine, .GenericUsb, .Headset, .Headphones, .HearingAid]
     }
 }

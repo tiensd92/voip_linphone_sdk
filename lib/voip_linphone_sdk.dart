@@ -1,11 +1,15 @@
 import 'dart:async';
 
+import 'package:voip_linphone_sdk/src/callkit/utils/sip_event.dart';
+
 import 'src/callkit/model/sip_configuration.dart';
+import 'src/callkit/utils/audio_device.dart';
 import 'src/callkit/voip_event.dart';
 import 'voip_linphone_sdk_platform_interface.dart';
 
 export 'src/callkit/callkit.dart';
 export 'src/callkit/voip_event.dart';
+export 'src/callkit/utils/audio_device.dart';
 
 class VoipLinphoneSdk {
   static StreamController<VoipEvent> get eventStreamController =>
@@ -51,8 +55,8 @@ class VoipLinphoneSdk {
     return VoipLinphoneSdkPlatform.instance.sendDTMF(dtmf);
   }
 
-  static Future<bool> toggleSpeaker() {
-    return VoipLinphoneSdkPlatform.instance.toggleSpeaker();
+  static Future<bool> toggleSpeaker(AudioDeviceKind type) {
+    return VoipLinphoneSdkPlatform.instance.toggleSpeaker(type.name);
   }
 
   static Future<bool> toggleMic() {
@@ -75,8 +79,19 @@ class VoipLinphoneSdk {
     return VoipLinphoneSdkPlatform.instance.getMissedCalls();
   }
 
-  static Future<String> getSipRegistrationState() {
-    return VoipLinphoneSdkPlatform.instance.getSipRegistrationState();
+  static Future<RegistrationState?> getSipRegistrationState() async {
+    try {
+      final eventName =
+          await VoipLinphoneSdkPlatform.instance.getSipRegistrationState();
+      try {
+        return RegistrationState.values
+            .firstWhere((event) => event.value == eventName);
+      } catch (_) {
+        return null;
+      }
+    } catch (_) {
+      rethrow;
+    }
   }
 
   static Future<bool> isMicEnabled() {
@@ -89,5 +104,42 @@ class VoipLinphoneSdk {
 
   static Future<void> registerPush() {
     return VoipLinphoneSdkPlatform.instance.registerPush();
+  }
+
+  static Future<List<AudioDevice>> getAudioDevices() async {
+    List<AudioDevice> audioDevices = [];
+    final audioDeviceNames =
+        await VoipLinphoneSdkPlatform.instance.getAudioDevices();
+    for (final audioDeviceName in audioDeviceNames.keys) {
+      final key = audioDeviceName?.toString();
+      final deviceName = audioDeviceNames[audioDeviceName]
+              ?.toString()
+              .replaceAll('[', '')
+              .replaceAll(']', '') ??
+          '';
+      if (key == null || deviceName.isEmpty) continue;
+
+      try {
+        final type = AudioDeviceKind.values.firstWhere((e) => e.name == key);
+        audioDevices.add(
+          AudioDevice(
+            type: type,
+            deviceName: deviceName,
+          ),
+        );
+      } catch (_) {}
+    }
+    return audioDevices;
+  }
+
+  static Future<AudioDeviceKind?> getCurrentAudioDevice() async {
+    final audioDevice =
+        await VoipLinphoneSdkPlatform.instance.getCurrentAudioDevice();
+
+    try {
+      return AudioDeviceKind.values.firstWhere((e) => e.name == audioDevice);
+    } catch (_) {
+      return null;
+    }
   }
 }

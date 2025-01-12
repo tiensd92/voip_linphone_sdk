@@ -9,7 +9,7 @@ import Foundation
 
 public enum CallType : String {
     /// call out
-    case outbound = "outbound"
+    case outbound = "Call.Outbound"
     /// call in
-    case inbound = "inbound"
+    case inbound = "Call.Inbound"
 }

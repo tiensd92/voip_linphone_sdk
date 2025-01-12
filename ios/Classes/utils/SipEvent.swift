@@ -8,38 +8,25 @@
 import Foundation
 
 enum SipEvent : String {
-    /// Status registration of sip account
-    case AccountRegistrationStateChanged = "AccountRegistrationStateChanged"
     /// Status ring when has action call in, call out
-    case Ring = "Ring"
+    case Ring = "Sip.Ring"
     /// Status up when accept calling
-    case Up = "Up"
+    case Up = "Sip.Up"
+    /// Status connected when accepted calling
+    case Connected = "Sip.Connected"
     /// Status pause calling
-    case Paused = "Paused"
+    case Paused = "Sip.Paused"
     /// Status resume calling
-    case Resuming = "Resuming"
+    case Resuming = "Sip.Resuming"
     /// Status call missed
-    case Missed = "Missed"
+    case Missed = "Sip.Missed"
     /// Status hangup calling
-    case Hangup = "Hangup"
+    case Hangup = "Sip.Hangup"
     /// Status call error
-    case Error = "Error"
+    case Error = "Sip.Error"
     /// Status call release
-    case Released = "Released"
-    case PushReceive = "PushReceive"
+    case Released = "Sip.Released"
+    case PushReceive = "Sip.PushReceive"
     ///  Token receivce
-    case PushToken = "PushToken"
+    case PushToken = "Sip.PushToken"
 }
-
-
-let EventAccountRegistrationStateChanged = SipEvent.AccountRegistrationStateChanged.rawValue
-let EventRing = SipEvent.Ring.rawValue
-let EventUp = SipEvent.Up.rawValue
-let EventPaused = SipEvent.Paused.rawValue
-let EventResuming = SipEvent.Resuming.rawValue
-let EventMissed = SipEvent.Missed.rawValue
-let EventHangup = SipEvent.Hangup.rawValue
-let EventError = SipEvent.Error.rawValue
-let EventReleased = SipEvent.Released.rawValue
-let EventPushReceive = SipEvent.PushReceive.rawValue
-let EventPushToken = SipEvent.PushToken.rawValue

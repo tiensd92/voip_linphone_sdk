@@ -2,8 +2,7 @@ import 'dart:async';
 
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
-import 'src/callkit/model/sip_configuration.dart';
-import 'src/callkit/voip_event.dart';
+import 'voip_linphone_sdk.dart';
 import 'voip_linphone_sdk_method_channel.dart';
 
 abstract class VoipLinphoneSdkPlatform extends PlatformInterface {
@@ -28,86 +27,94 @@ abstract class VoipLinphoneSdkPlatform extends PlatformInterface {
   }
 
   Future<String?> getPlatformVersion() {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('getPlatformVersion() has not been implemented.');
   }
 
   Future<void> initSipModule(SipConfiguration sipConfiguration) async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('initSipModule() has not been implemented.');
   }
 
   Future<bool> call(String phoneNumber) async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('call() has not been implemented.');
   }
 
   Future<bool> hangup() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('hangup() has not been implemented.');
   }
 
   Future<bool> answer() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('answer() has not been implemented.');
   }
 
   Future<bool> reject() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('reject() has not been implemented.');
   }
 
   Future<bool> transfer(String extension) async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('transfer() has not been implemented.');
   }
 
   Future<bool> pause() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('pause() has not been implemented.');
   }
 
   Future<bool> resume() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('resume() has not been implemented.');
   }
 
   Future<bool> sendDTMF(String dtmf) async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('sendDTMF() has not been implemented.');
   }
 
-  Future<bool> toggleSpeaker() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+  Future<bool> toggleSpeaker(String audioDevice) async {
+    throw UnimplementedError('toggleSpeaker() has not been implemented.');
   }
 
   Future<bool> toggleMic() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('toggleMic() has not been implemented.');
   }
 
   Future<bool> refreshSipAccount() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('refreshSipAccount() has not been implemented.');
   }
 
   Future<bool> unregisterSipAccount() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('unregisterSipAccount() has not been implemented.');
   }
 
   Future<String> getCallId() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('getCallId() has not been implemented.');
   }
 
   Future<int> getMissedCalls() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('getMissedCalls() has not been implemented.');
   }
 
   Future<String> getSipRegistrationState() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('getSipRegistrationState() has not been implemented.');
   }
 
   Future<bool> isMicEnabled() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('isMicEnabled() has not been implemented.');
   }
 
   Future<bool> isSpeakerEnabled() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('isSpeakerEnabled() has not been implemented.');
   }
 
   Future<void> registerPush() async {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('registerPush() has not been implemented.');
   }
 
   StreamController<VoipEvent> get eventStreamController {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('eventStreamController has not been implemented.');
+  }
+
+  Future<Map<Object?, Object?>> getAudioDevices() async {
+    throw UnimplementedError('getAudioDevices() has not been implemented.');
+  }
+
+  Future<String?> getCurrentAudioDevice() async {
+    throw UnimplementedError('getCurrentAudioDevice() has not been implemented.');
   }
 }
