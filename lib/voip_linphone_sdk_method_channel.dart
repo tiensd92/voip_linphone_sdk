@@ -68,8 +68,11 @@ class MethodChannelVoipLinphoneSdk extends VoipLinphoneSdkPlatform {
   }
 
   @override
-  Future<bool> call(String phoneNumber) async {
-    return await methodChannel.invokeMethod('call', {"recipient": phoneNumber});
+  Future<bool> call(String phoneNumber, bool isRecord) async {
+    return await methodChannel.invokeMethod('call', {
+      'recipient': phoneNumber,
+      'isRecording': isRecord,
+    });
   }
 
   @override

@@ -34,7 +34,7 @@ abstract class VoipLinphoneSdkPlatform extends PlatformInterface {
     throw UnimplementedError('initSipModule() has not been implemented.');
   }
 
-  Future<bool> call(String phoneNumber) async {
+  Future<bool> call(String phoneNumber, bool isRecord) async {
     throw UnimplementedError('call() has not been implemented.');
   }
 

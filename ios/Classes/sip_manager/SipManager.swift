@@ -15,7 +15,17 @@ class SipManager {
     private var mCore: Core!
     private var timeStartStreamingRunning: Int64 = 0
     private var isPause: Bool = false
+    private var isRecording: Bool = false
     private var coreDelegate : CoreDelegate!
+    
+    static let X_UUID_HEADER: String = "X-UUID"
+    static let EXTENSTION_KEY: String = "extension"
+    static let PHONE_NUMBER_KEY: String = "phoneNumber"
+    static let CALL_TYPE_KEY: String = "callType"
+    static let CALL_ID_KEY: String = "callId"
+    static let DURATION_KEY: String = "duration"
+    static let MESSAGE_KEY: String = "message"
+    static let TOTAL_MISSED_KEY: String = "totalMissed"
     
     public init() {
         do {
@@ -30,74 +40,69 @@ class SipManager {
                     print("state: \(state) - message: \(message)")
                     
                     switch (state) {
-                    case .IncomingReceived:
+                    case .OutgoingEarlyMedia, .PushIncomingReceived, .IncomingReceived:
                         // Immediately hang up when we receive a call. There's nothing inherently wrong with this
                         // but we don't need it right now, so better to leave it deactivated.
                         // try! call.terminate()
                         let ext = core.defaultAccount?.contactAddress?.username ?? ""
                         let phoneNumber = call.remoteAddress?.username ?? ""
-                        self.sendEvent(eventName: SipEvent.Ring.rawValue, body: ["extension": ext, "phoneNumber": phoneNumber, "callType": CallType.inbound.rawValue])
+                        self.sendEvent(eventName: SipEvent.Ring.rawValue, body: [SipManager.EXTENSTION_KEY: ext, SipManager.PHONE_NUMBER_KEY: phoneNumber, SipManager.CALL_TYPE_KEY: CallType.inbound.rawValue])
                         break
-                    case .OutgoingInit:
-                        // First state an outgoing call will go through
-                        break
-                    case .OutgoingProgress:
+                    case .OutgoingInit, .OutgoingRinging, .OutgoingProgress:
                         // First state an outgoing call will go through
                         let ext = core.defaultAccount?.contactAddress?.username ?? ""
                         let phoneNumber = call.remoteAddress?.username ?? ""
-                        self.sendEvent(eventName: SipEvent.Ring.rawValue, body: ["extension": ext, "phoneNumber": phoneNumber, "callType": CallType.outbound.rawValue])
-                        break
-                    case .OutgoingRinging:
-                        // Once remote accepts, ringing will commence (180 response)
+                        self.sendEvent(eventName: SipEvent.Ring.rawValue, body: [SipManager.EXTENSTION_KEY: ext, SipManager.PHONE_NUMBER_KEY: phoneNumber, SipManager.CALL_TYPE_KEY: CallType.outbound.rawValue])
                         break
                     case .Connected:
                         let callId = call.callLog?.callId ?? ""
-                        self.sendEvent(eventName: SipEvent.Connected.rawValue, body: ["callId": callId])
+                        self.sendEvent(eventName: SipEvent.Connected.rawValue, body: [SipManager.CALL_ID_KEY: callId])
                         break
                     case .StreamsRunning:
-                        // This state indicates the call is active.
-                        // You may reach this state multiple times, for example after a pause/resume
-                        // or after the ICE negotiation completes
-                        // Wait for the call to be connected before allowing a call update
-                        if(!self.isPause) {
+                        if self.timeStartStreamingRunning <= 0 {
                             self.timeStartStreamingRunning = Int64(Date().timeIntervalSince1970 * 1000)
                         }
+                        
+                        if self.isRecording {
+                            self.startRecording()
+                        }
+                        
                         self.isPause = false
                         let callId = call.callLog?.callId ?? ""
-                        self.sendEvent(eventName: SipEvent.Up.rawValue, body: ["callId": callId])
+                        self.sendEvent(eventName: SipEvent.Up.rawValue, body: [SipManager.CALL_ID_KEY: callId])
                         break
-                    case .Paused:
+                    case .Pausing, .PausedByRemote, .Paused:
                         self.isPause = true
                         self.sendEvent(eventName: SipEvent.Paused.rawValue, body: nil)
                         break
                     case .Resuming:
                         self.sendEvent(eventName: SipEvent.Resuming.rawValue, body: nil)
                         break
-                    case .PausedByRemote:
-                        break
-                    case .Updating:
-                        // When we request a call update, for example when toggling video
-                        break
-                    case .UpdatedByRemote:
-                        break
                     case .Released:
                         if(self.isMissed(callLog: call.callLog)) {
                             let callee = call.remoteAddress?.username ?? ""
                             let totalMissed = core.missedCallsCount
-                            self.sendEvent(eventName: SipEvent.Missed.rawValue, body: ["phoneNumber": callee, "totalMissed": totalMissed])
+                            self.sendEvent(eventName: SipEvent.Missed.rawValue, body: [SipManager.PHONE_NUMBER_KEY: callee, SipManager.TOTAL_MISSED_KEY: totalMissed])
                         }
                         break
                     case .End:
                         let duration = self.timeStartStreamingRunning == 0 ? 0 : Int64(Date().timeIntervalSince1970 * 1000) - self.timeStartStreamingRunning
-                        self.sendEvent(eventName: SipEvent.Hangup.rawValue, body: ["duration": duration])
+                        self.sendEvent(eventName: SipEvent.Hangup.rawValue, body: [SipManager.DURATION_KEY: duration])
                         self.timeStartStreamingRunning = 0
                         break
                     case .Error:
-                        self.sendEvent(eventName: SipEvent.Error.rawValue, body: ["message": message])
+                        self.sendEvent(eventName: SipEvent.Error.rawValue, body: [SipManager.MESSAGE_KEY: message])
                         break
-                    default:
-                        break
+                    case .IncomingEarlyMedia: break
+                    case .EarlyUpdatedByRemote: break
+                    case .EarlyUpdating: break
+                    case .Idle: break
+                    case .Updating: break
+                    case .UpdatedByRemote: break
+                    case .Referred: break
+                    case .none: break
                     }
+                    
                 },
                 //                onAudioDevicesListUpdated: { (core: Core) in
                 //                    let currentAudioDeviceType = core.currentCall?.outputAudioDevice?.type
@@ -108,7 +113,7 @@ class SipManager {
                 //                    self.sendEvent(withName: "AudioDevicesChanged", body: ["audioOutputType": audioOutputType])
                 //                },
                 onAccountRegistrationStateChanged: { (core: Core, account: Account, state: RegistrationState, message: String) in
-                    self.sendEvent(eventName: state.name, body: ["message": message])
+                    self.sendEvent(eventName: state.name, body: [SipManager.MESSAGE_KEY: message])
                 }
             )
         } catch {
@@ -159,14 +164,14 @@ class SipManager {
         // Enable push notifications on this account
         //accountParams.pushNotificationAllowed = true
         // We're in a sandbox application, so we must set the provider to "apns.dev" since it will be "apns" by default, which is used only for production apps
-       // accountParams.pushNotificationConfig?.provider = "apns.dev"
+        // accountParams.pushNotificationConfig?.provider = "apns.dev"
         let account = try mCore.createAccount(params: accountParams)
         mCore.addAuthInfo(info: authInfo)
         try mCore.addAccount(account: account)
         mCore.defaultAccount = account
     }
     
-    func call(recipient: String, result: FlutterResult) {
+    func call(recipient: String, isRecording: Bool, result: FlutterResult) {
         NSLog("Try to call")
         do {
             // As for everything we need to get the SIP URI of the remote and convert it sto an Address
@@ -186,7 +191,7 @@ class SipManager {
             // We can now configure it
             // Here we ask for no encryption but we could ask for ZRTP/SRTP/DTLS
             params.mediaEncryption = MediaEncryption.None
-            params.addCustomHeader(headerName: "X-UUID", headerValue: UUID().uuidString)
+            params.addCustomHeader(headerName: SipManager.X_UUID_HEADER, headerValue: UUID().uuidString)
             
             // If we wanted to start the call with video directly
             //params.videoEnabled = true
@@ -237,9 +242,9 @@ class SipManager {
                 return result(false)
             }
             // if(coreCall!.state == Call.State.IncomingReceived) {
-                // try coreCall!.decline(reason: Reason.Forbidden)
-                // NSLog("Hangup successful")
-                // return result(true)
+            // try coreCall!.decline(reason: Reason.Forbidden)
+            // NSLog("Hangup successful")
+            // return result(true)
             // }
             
             // Terminating a call is quite simple
@@ -504,6 +509,21 @@ class SipManager {
     func getCurrentAudioDevice(result: FlutterResult) {
         let audioDevice = mCore.currentCall?.outputAudioDevice?.type.name
         result(audioDevice)
+    }
+    
+    func startRecording() {
+        if let uuidString = mCore.currentCall?.params?.getCustomHeader(headerName: SipManager.X_UUID_HEADER), let uuid = UUID(uuidString: uuidString) {
+            let duration = self.timeStartStreamingRunning == 0 ? 0 : Int64(Date().timeIntervalSince1970 * 1000) - self.timeStartStreamingRunning
+            if let appFolder = Bundle.main.resourceURL {
+                let pathFile = appFolder.appendingPathComponent("\(uuidString)_\(duration).mp3")
+                mCore.recordFile = pathFile.absoluteString
+                mCore.currentCall?.startRecording()
+            }
+        }
+    }
+    
+    func stopRecording() {
+        mCore.currentCall?.stopRecording()
     }
 }
 

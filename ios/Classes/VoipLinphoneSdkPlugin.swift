@@ -38,8 +38,8 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             }
             break
         case "call":
-            if let arguments = call.arguments as? [String:Any], let phoneNumber = arguments["recipient"] as? String {
-                sipManager.call(recipient: phoneNumber, result: result)
+            if let arguments = call.arguments as? [String:Any], let phoneNumber = arguments["recipient"] as? String, let isRecording = arguments["isRecording"] as? Bool {
+                sipManager.call(recipient: phoneNumber, isRecording: isRecording, result: result)
             } else {
                 result(FlutterError(code: "404", message: "Recipient is not valid", details: nil))
             }

@@ -23,8 +23,8 @@ class VoipLinphoneSdk {
     return VoipLinphoneSdkPlatform.instance.initSipModule(sipConfiguration);
   }
 
-  static Future<bool> call(String phoneNumber) {
-    return VoipLinphoneSdkPlatform.instance.call(phoneNumber);
+  static Future<bool> call(String phoneNumber, bool isRecord) {
+    return VoipLinphoneSdkPlatform.instance.call(phoneNumber, isRecord);
   }
 
   static Future<bool> hangup() {
