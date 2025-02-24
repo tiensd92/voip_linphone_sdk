@@ -27,6 +27,8 @@ class SipManager {
     static let MESSAGE_KEY: String = "message"
     static let TOTAL_MISSED_KEY: String = "totalMissed"
     
+    var timer: Timer?
+    
     public init() {
         do {
             try mCore = Factory.Instance.createCore(configPath: "", factoryConfigPath: "", systemContext: nil)
@@ -59,6 +61,11 @@ class SipManager {
                         self.sendEvent(eventName: SipEvent.Connected.rawValue, body: [SipManager.CALL_ID_KEY: callId])
                         break
                     case .StreamsRunning:
+                        self.timer?.invalidate()
+                        self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) {_ in
+                            print("Log call status: \(String(describing: self.mCore.currentCall?.callLog?.status)) - duration: \(String(describing: self.mCore.currentCall?.callLog?.duration))")
+                        }
+                        
                         if self.timeStartStreamingRunning <= 0 {
                             self.timeStartStreamingRunning = Int64(Date().timeIntervalSince1970 * 1000)
                         }
@@ -241,11 +248,12 @@ class SipManager {
                 NSLog("Current call not found")
                 return result(false)
             }
-            // if(coreCall!.state == Call.State.IncomingReceived) {
-            // try coreCall!.decline(reason: Reason.Forbidden)
-            // NSLog("Hangup successful")
-            // return result(true)
-            // }
+            
+            if(coreCall!.state == Call.State.IncomingReceived) {
+                try coreCall!.decline(reason: Reason.Declined)
+                NSLog("Hangup successful")
+                return result(true)
+            }
             
             // Terminating a call is quite simple
             try coreCall!.terminate()
@@ -268,7 +276,7 @@ class SipManager {
             }
             
             // Reject a call
-            // try coreCall!.decline(reason: Reason.Forbidden)
+            try coreCall!.decline(reason: Reason.Forbidden)
             try coreCall!.terminate()
             NSLog("Reject successful")
             result(true)
@@ -512,7 +520,7 @@ class SipManager {
     }
     
     func startRecording() {
-        if let uuidString = mCore.currentCall?.params?.getCustomHeader(headerName: SipManager.X_UUID_HEADER), let uuid = UUID(uuidString: uuidString) {
+        if let uuidString = mCore.currentCall?.params?.getCustomHeader(headerName: SipManager.X_UUID_HEADER) {
             let duration = self.timeStartStreamingRunning == 0 ? 0 : Int64(Date().timeIntervalSince1970 * 1000) - self.timeStartStreamingRunning
             if let appFolder = Bundle.main.resourceURL {
                 let pathFile = appFolder.appendingPathComponent("\(uuidString)_\(duration).mp3")

@@ -201,6 +201,28 @@ extension VoipLinphoneSdkPlugin: PKPushRegistryDelegate {
     }
 }
 
+extension VoipLinphoneSdkPlugin: CXProviderDelegate {
+    public func providerDidReset(_ provider: CXProvider) {
+        
+    }
+    
+    public func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
+        action.fulfill()
+        //sipManager.hangup(result: nil)
+            
+        //let data = ["event": SipEvent.PushReceive.rawValue, "body": ["call_id": "\(uuid)", "from_number": caller, "callee": callee]] as [String: Any]
+        //Self.eventSink?(data)
+    }
+    
+    public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
+        action.fulfill()
+        //sipManager.answer(result: nil)
+        
+        //let data = ["event": SipEvent.PushReceive.rawValue, "body": ["call_id": "\(uuid)", "from_number": caller, "callee": callee]] as [String: Any]
+        //Self.eventSink?(data)
+    }
+}
+
 extension VoipLinphoneSdkPlugin: UNUserNotificationCenterDelegate {
     
     public func userNotificationCenter(
