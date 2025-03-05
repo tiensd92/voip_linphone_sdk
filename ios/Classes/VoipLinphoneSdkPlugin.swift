@@ -7,8 +7,6 @@ import CallKit
 public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private var sipManager: SipManager = SipManager.instance
     static var eventSink: FlutterEventSink?
-    private var provider: CXProvider?
-    private var voipRegistry: PKPushRegistry?
     
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = VoipLinphoneSdkPlugin()
@@ -28,7 +26,7 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
                let sipConfiguration = SipConfiguaration.toObject(JSONString: jsonData){
                 do {
                     try sipManager.initSipModule(sipConfiguration: sipConfiguration)
-                    initPushKit()
+                    result(true)
                 } catch(let error) {
                     NSLog(error.localizedDescription)
                     result(FlutterError(code: "500", message: error.localizedDescription, details: nil))
@@ -113,7 +111,8 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             result("iOS " + UIDevice.current.systemVersion)
             break
         case "registerPush":
-            registerPush()
+            //registerPush()
+            result(true)
             break
         case "audioDevices":
             sipManager.getAudioDevices(result: result)
@@ -136,90 +135,11 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         return nil
     }
     
-    private func registerPush() {
-        voipRegistry = PKPushRegistry(queue: nil)
-        voipRegistry?.delegate = self
-        voipRegistry?.desiredPushTypes = [.voIP]
-    }
-    
     private func requestNotificationAuthorization() {
         UNUserNotificationCenter.current()
             .requestAuthorization(options: [.alert, .sound, .badge]) { granted, _  in
                 print(">> requestNotificationAuthorization granted: \(granted)")
             }
-    }
-    
-    private func initPushKit() {
-        UNUserNotificationCenter.current().delegate = self
-        requestNotificationAuthorization()
-        
-        let config = CXProviderConfiguration(localizedName: "2ndPhone")
-        config.supportsVideo = false
-        config.supportedHandleTypes = [.generic]
-        config.maximumCallsPerCallGroup = 1
-        config.maximumCallGroups = 1
-        self.provider = CXProvider(configuration: config)
-    }
-}
-
-extension VoipLinphoneSdkPlugin: PKPushRegistryDelegate {
-    
-    public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
-        if type == .voIP {
-            let voipToken = registry.pushToken(for: .voIP)?.map { String(format: "%02X", $0) }.joined() ?? ""
-            print("Voip token: \(voipToken)")
-            let data = ["event": SipEvent.PushToken.rawValue, "body": ["voip_token": voipToken]] as [String: Any]
-            Self.eventSink?(data)
-        }
-    }
-    
-    public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
-        if type == .voIP {
-            let uuid = UUID()
-            let caller = payload.dictionaryPayload["from_number"] as? String ?? ""
-            let callee = payload.dictionaryPayload["to_number"] as? String ?? ""
-            let data = ["event": SipEvent.PushReceive.rawValue, "body": ["call_id": "\(uuid)", "from_number": caller, "callee": callee]] as [String: Any]
-            Self.eventSink?(data)
-            
-            reportIncommingCall(uuid, caller, completion: completion)
-        }
-    }
-    
-    public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
-        
-    }
-    
-    private func reportIncommingCall(_ uuid: UUID, _ caller: String, completion: @escaping () -> Void) {
-        let update = CXCallUpdate()
-        update.remoteHandle = CXHandle(type: .phoneNumber,
-                                       value: "1077")
-        update.localizedCallerName = "1077"
-        
-        self.provider?.reportNewIncomingCall(with: uuid, update: update , completion: { [weak self] error in
-            completion()
-        })
-    }
-}
-
-extension VoipLinphoneSdkPlugin: CXProviderDelegate {
-    public func providerDidReset(_ provider: CXProvider) {
-        
-    }
-    
-    public func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-        action.fulfill()
-        //sipManager.hangup(result: nil)
-            
-        //let data = ["event": SipEvent.PushReceive.rawValue, "body": ["call_id": "\(uuid)", "from_number": caller, "callee": callee]] as [String: Any]
-        //Self.eventSink?(data)
-    }
-    
-    public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
-        action.fulfill()
-        //sipManager.answer(result: nil)
-        
-        //let data = ["event": SipEvent.PushReceive.rawValue, "body": ["call_id": "\(uuid)", "from_number": caller, "callee": callee]] as [String: Any]
-        //Self.eventSink?(data)
     }
 }
 

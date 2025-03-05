@@ -18,7 +18,6 @@ class SipConfiguaration: Decodable {
     var transportType: String = ""
     var isKeepAlive: Bool = false
     
-    
     func toLpTransportType() -> TransportType {
         switch(transportType) {
             case "Tcp":

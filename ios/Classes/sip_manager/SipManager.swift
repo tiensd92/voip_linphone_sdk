@@ -27,12 +27,14 @@ class SipManager {
     static let MESSAGE_KEY: String = "message"
     static let TOTAL_MISSED_KEY: String = "totalMissed"
     
-    var timer: Timer?
-    
     public init() {
         do {
             try mCore = Factory.Instance.createCore(configPath: "", factoryConfigPath: "", systemContext: nil)
+            mCore.pushNotificationEnabled = true
             coreDelegate = CoreDelegateStub(
+                onPushNotificationReceived: {(core: Core, payload: String) in
+                    print(payload)
+                },
                 onCallStateChanged: {(
                     core: Core,
                     call: Call,
@@ -61,11 +63,6 @@ class SipManager {
                         self.sendEvent(eventName: SipEvent.Connected.rawValue, body: [SipManager.CALL_ID_KEY: callId])
                         break
                     case .StreamsRunning:
-                        self.timer?.invalidate()
-                        self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) {_ in
-                            print("Log call status: \(String(describing: self.mCore.currentCall?.callLog?.status)) - duration: \(String(describing: self.mCore.currentCall?.callLog?.duration))")
-                        }
-                        
                         if self.timeStartStreamingRunning <= 0 {
                             self.timeStartStreamingRunning = Int64(Date().timeIntervalSince1970 * 1000)
                         }
