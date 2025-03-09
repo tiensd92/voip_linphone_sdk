@@ -79,7 +79,8 @@ abstract class VoipLinphoneSdkPlatform extends PlatformInterface {
   }
 
   Future<bool> unregisterSipAccount() async {
-    throw UnimplementedError('unregisterSipAccount() has not been implemented.');
+    throw UnimplementedError(
+        'unregisterSipAccount() has not been implemented.');
   }
 
   Future<String> getCallId() async {
@@ -91,7 +92,8 @@ abstract class VoipLinphoneSdkPlatform extends PlatformInterface {
   }
 
   Future<String> getSipRegistrationState() async {
-    throw UnimplementedError('getSipRegistrationState() has not been implemented.');
+    throw UnimplementedError(
+        'getSipRegistrationState() has not been implemented.');
   }
 
   Future<bool> isMicEnabled() async {
@@ -115,6 +117,11 @@ abstract class VoipLinphoneSdkPlatform extends PlatformInterface {
   }
 
   Future<String?> getCurrentAudioDevice() async {
-    throw UnimplementedError('getCurrentAudioDevice() has not been implemented.');
+    throw UnimplementedError(
+        'getCurrentAudioDevice() has not been implemented.');
+  }
+
+  Future<String?> getVoipToken() async {
+    throw UnimplementedError('getVoipToken() has not been implemented.');
   }
 }

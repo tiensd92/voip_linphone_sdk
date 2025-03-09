@@ -174,4 +174,10 @@ class MethodChannelVoipLinphoneSdk extends VoipLinphoneSdkPlatform {
   Future<String?> getCurrentAudioDevice() async {
     return await methodChannel.invokeMethod('currentAudioDevice');
   }
+
+  @override
+  Future<String?> getVoipToken() async {
+    final voipToken = await methodChannel.invokeMethod<String?>('voipToken');
+    return voipToken?.isNotEmpty == true ? voipToken : null;
+  }
 }

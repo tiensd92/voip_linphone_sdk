@@ -142,4 +142,9 @@ class VoipLinphoneSdk {
       return null;
     }
   }
+
+  static Future<String?> getVoipToken() async {
+    final voipToken = await VoipLinphoneSdkPlatform.instance.getVoipToken();
+    return voipToken;
+  }
 }

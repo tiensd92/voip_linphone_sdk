@@ -119,8 +119,14 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             break
         case "audioDevices":
             sipManager.getAudioDevices(result: result)
+            break
         case "currentAudioDevice":
             sipManager.getCurrentAudioDevice(result: result)
+            break
+        case "voipToken":
+            let voipToken = UserDefaults.standard.string(forKey: "voipToken") ?? ""
+            result(voipToken)
+            break
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -181,7 +187,7 @@ extension VoipLinphoneSdkPlugin: PKPushRegistryDelegate {
     public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
         if type == .voIP {
             let voipToken = registry.pushToken(for: .voIP)?.map { String(format: "%02X", $0) }.joined() ?? ""
-            print("Voip token: \(voipToken)")
+            UserDefaults.standard.set(voipToken, forKey: "voipToken")
             let data = ["event": SipEvent.PushToken.rawValue, "body": ["voip_token": voipToken]] as [String: Any]
             Self.eventSink?(data)
         }
