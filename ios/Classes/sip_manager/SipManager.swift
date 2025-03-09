@@ -31,6 +31,7 @@ class SipManager {
         do {
             try mCore = Factory.Instance.createCore(configPath: "", factoryConfigPath: "", systemContext: nil)
             mCore.pushNotificationEnabled = true
+            //mCore.processPushNotification(callId: <#T##String?#>)
             coreDelegate = CoreDelegateStub(
                 onPushNotificationReceived: {(core: Core, payload: String) in
                     print(payload)
