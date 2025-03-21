@@ -50,7 +50,7 @@ class SipManager: NSObject {
                     if let jsonData = payload.data(using: .utf8) {
                         do {
                             let pushNotification = try JSONDecoder().decode(PushNotification.self, from: jsonData)
-                            //self.mCore.processPushNotification(callId: pushNotification.aps.alert.incoming_caller_id)
+                            self.mCore.processPushNotification(callId: pushNotification.aps.alert.incoming_caller_id)
                             self.mProviderDelegate?.incomingCallUUID = UUID(uuidString: pushNotification.aps.alert.uuid)
                         } catch { }
                     }
@@ -80,12 +80,6 @@ class SipManager: NSObject {
                         
                         self.mCall = call
                         self.isCallIncoming = true
-                        
-                        do {
-                            try self.mCall?.accept()
-                        } catch {
-                            print(error)
-                        }
                         break
                     case .IncomingReceived:
                         // If app is in foreground, it's likely that we will receive the SIP invite before the Push notification
