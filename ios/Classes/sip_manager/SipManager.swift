@@ -8,15 +8,23 @@ import Foundation
 import linphonesw
 import Flutter
 import CallKit
+import PushKit
+import AVFAudio
 
-class SipManager {
+class SipManager: NSObject {
     
     static let instance = SipManager()
-    private var mCore: Core!
+    var mCore: Core!
     private var timeStartStreamingRunning: Int64 = 0
     private var isPause: Bool = false
     private var isRecording: Bool = false
     private var coreDelegate : CoreDelegate!
+    private var provider: CXProvider?
+    var mCall: Call?
+    var isCallRunning: Bool = false
+    var isCallIncoming: Bool = false
+    var incomingCallName: String?
+    var remoteAddress : String = "Nobody yet"
     
     static let X_UUID_HEADER: String = "X-UUID"
     static let EXTENSTION_KEY: String = "extension"
@@ -27,14 +35,25 @@ class SipManager {
     static let MESSAGE_KEY: String = "message"
     static let TOTAL_MISSED_KEY: String = "totalMissed"
     
-    public init() {
+    var mProviderDelegate: CallKitProviderDelegate!
+    var timerIncoming: Timer?
+    
+    public override init() {
+        super.init()
+        
         do {
             try mCore = Factory.Instance.createCore(configPath: "", factoryConfigPath: "", systemContext: nil)
             mCore.pushNotificationEnabled = true
-            //mCore.processPushNotification(callId: <#T##String?#>)
+            mProviderDelegate = CallKitProviderDelegate(sipManager: self)
             coreDelegate = CoreDelegateStub(
                 onPushNotificationReceived: {(core: Core, payload: String) in
-                    print(payload)
+                    if let jsonData = payload.data(using: .utf8) {
+                        do {
+                            let pushNotification = try JSONDecoder().decode(PushNotification.self, from: jsonData)
+                            //self.mCore.processPushNotification(callId: pushNotification.aps.alert.incoming_caller_id)
+                            self.mProviderDelegate?.incomingCallUUID = UUID(uuidString: pushNotification.aps.alert.uuid)
+                        } catch { }
+                    }
                 },
                 onCallStateChanged: {(
                     core: Core,
@@ -42,13 +61,43 @@ class SipManager {
                     state: Call.State?,
                     message: String
                 ) in
+                    
                     print("state: \(state) - message: \(message)")
                     
                     switch (state) {
-                    case .OutgoingEarlyMedia, .PushIncomingReceived, .IncomingReceived:
-                        // Immediately hang up when we receive a call. There's nothing inherently wrong with this
-                        // but we don't need it right now, so better to leave it deactivated.
-                        // try! call.terminate()
+                    case .PushIncomingReceived:
+                        self.timerIncoming?.invalidate()
+                        self.timerIncoming = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) {
+                            timer in
+                            self.isCallIncoming = false
+                            self.isCallRunning = false
+                            self.mProviderDelegate?.stopCall()
+                        }
+                        
+                        if !self.isCallIncoming {
+                            self.mProviderDelegate?.incomingCall()
+                        }
+                        
+                        self.mCall = call
+                        self.isCallIncoming = true
+                        
+                        do {
+                            try self.mCall?.accept()
+                        } catch {
+                            print(error)
+                        }
+                        break
+                    case .IncomingReceived:
+                        // If app is in foreground, it's likely that we will receive the SIP invite before the Push notification
+                        if !self.isCallIncoming {
+                            self.mProviderDelegate?.incomingCall()
+                        }
+                        
+                        self.mCall = call
+                        self.isCallIncoming = true
+                        self.remoteAddress = call.remoteAddress!.asStringUriOnly()
+                        break
+                    case .OutgoingEarlyMedia:
                         let ext = core.defaultAccount?.contactAddress?.username ?? ""
                         let phoneNumber = call.remoteAddress?.username ?? ""
                         self.sendEvent(eventName: SipEvent.Ring.rawValue, body: [SipManager.EXTENSTION_KEY: ext, SipManager.PHONE_NUMBER_KEY: phoneNumber, SipManager.CALL_TYPE_KEY: CallType.inbound.rawValue])
@@ -60,6 +109,10 @@ class SipManager {
                         self.sendEvent(eventName: SipEvent.Ring.rawValue, body: [SipManager.EXTENSTION_KEY: ext, SipManager.PHONE_NUMBER_KEY: phoneNumber, SipManager.CALL_TYPE_KEY: CallType.outbound.rawValue])
                         break
                     case .Connected:
+                        self.timerIncoming?.invalidate()
+                        self.isCallIncoming = false
+                        self.isCallRunning = true
+
                         let callId = call.callLog?.callId ?? ""
                         self.sendEvent(eventName: SipEvent.Connected.rawValue, body: [SipManager.CALL_ID_KEY: callId])
                         break
@@ -89,14 +142,26 @@ class SipManager {
                             let totalMissed = core.missedCallsCount
                             self.sendEvent(eventName: SipEvent.Missed.rawValue, body: [SipManager.PHONE_NUMBER_KEY: callee, SipManager.TOTAL_MISSED_KEY: totalMissed])
                         }
+                        
+                        if (self.isCallRunning) {
+                            self.mProviderDelegate?.stopCall()
+                        }
                         break
                     case .End:
                         let duration = self.timeStartStreamingRunning == 0 ? 0 : Int64(Date().timeIntervalSince1970 * 1000) - self.timeStartStreamingRunning
                         self.sendEvent(eventName: SipEvent.Hangup.rawValue, body: [SipManager.DURATION_KEY: duration])
                         self.timeStartStreamingRunning = 0
+                        
+                        if (self.isCallRunning) {
+                            self.mProviderDelegate?.stopCall()
+                        }
                         break
                     case .Error:
                         self.sendEvent(eventName: SipEvent.Error.rawValue, body: [SipManager.MESSAGE_KEY: message])
+                        
+                        if (self.isCallRunning) {
+                            self.mProviderDelegate?.stopCall()
+                        }
                         break
                     case .IncomingEarlyMedia: break
                     case .EarlyUpdatedByRemote: break
@@ -176,14 +241,14 @@ class SipManager {
         mCore.defaultAccount = account
     }
     
-    func call(recipient: String, isRecording: Bool, result: FlutterResult) {
+    func call(recipient: String, isRecording: Bool, result: FlutterResult?) {
         NSLog("Try to call")
         do {
             // As for everything we need to get the SIP URI of the remote and convert it sto an Address
             let domain: String? = mCore.defaultAccount?.params?.domain
             if (domain == nil) {
                 NSLog("Can't create sip uri")
-                result(FlutterError(code: "500", message: "Can't create sip uri", details: nil))
+                result?(FlutterError(code: "500", message: "Can't create sip uri", details: nil))
                 return
             }
             let sipUri = String("sip:" + recipient + "@" + domain!)
@@ -204,14 +269,14 @@ class SipManager {
             // Finally we start the call
             if let call = mCore.inviteAddressWithParams(addr: remoteAddress, params: params) {
                 NSLog("Call successful")
-                result(true)
+                result?(true)
             } else {
                 NSLog("Create Call failed")
-                result(FlutterError(code: "500", message: "Create Call failed", details: nil))
+                result?(FlutterError(code: "500", message: "Create Call failed", details: nil))
             }
         } catch {
             NSLog(error.localizedDescription)
-            result(FlutterError(code: "500", message: error.localizedDescription, details: nil))
+            result?(FlutterError(code: "500", message: error.localizedDescription, details: nil))
         }
     }
     
@@ -567,3 +632,19 @@ extension AudioDevice.Kind {
         return [.Unknown, .Microphone, .Earpiece, .Speaker, .Bluetooth, .BluetoothA2DP, .Telephony, .AuxLine, .GenericUsb, .Headset, .Headphones, .HearingAid]
     }
 }
+
+struct APS: Codable {
+    let alert: Alert
+}
+
+struct Alert: Codable {
+    let incoming_caller_id: String
+    let incoming_caller_name: String
+    let uuid: String
+}
+
+struct PushNotification: Codable {
+    let aps: APS
+}
+
+

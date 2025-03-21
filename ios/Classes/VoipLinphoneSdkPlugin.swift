@@ -7,7 +7,6 @@ import CallKit
 public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private var sipManager: SipManager = SipManager.instance
     static var eventSink: FlutterEventSink?
-    private var provider: CXProvider?
     private var voipRegistry: PKPushRegistry?
     
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -113,7 +112,6 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             result("iOS " + UIDevice.current.systemVersion)
             break
         case "registerPush":
-            initPushKit()
             registerPush()
             result(true)
             break
@@ -156,18 +154,6 @@ public class VoipLinphoneSdkPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         voipRegistry?.delegate = self
         voipRegistry?.desiredPushTypes = [.voIP]
     }
-    
-    private func initPushKit() {
-        UNUserNotificationCenter.current().delegate = self
-        requestNotificationAuthorization()
-        
-        let config = CXProviderConfiguration(localizedName: "2ndPhone")
-        config.supportsVideo = false
-        config.supportedHandleTypes = [.generic]
-        config.maximumCallsPerCallGroup = 1
-        config.maximumCallGroups = 1
-        self.provider = CXProvider(configuration: config)
-    }
 }
 
 extension VoipLinphoneSdkPlugin: UNUserNotificationCenterDelegate {
@@ -189,34 +175,49 @@ extension VoipLinphoneSdkPlugin: PKPushRegistryDelegate {
             let voipToken = registry.pushToken(for: .voIP)?.map { String(format: "%02X", $0) }.joined() ?? ""
             UserDefaults.standard.set(voipToken, forKey: "voipToken")
             let data = ["event": SipEvent.PushToken.rawValue, "body": ["voip_token": voipToken]] as [String: Any]
+            registry.pushToken(for: .voIP)
             Self.eventSink?(data)
+            
+            if let rawPointer = voipToken.toUnsafeMutableRawPointer() {
+                let stringLength = strlen(rawPointer.assumingMemoryBound(to: CChar.self))
+                print("String length from toUnsafeMutableRawPointer(): \(stringLength)")
+                let restoredString = String(cString: rawPointer.assumingMemoryBound(to: CChar.self))
+                print("Restored string from toUnsafeMutableRawPointer(): \(restoredString)")
+            } else {
+                print("Failed to get raw pointer.")
+            }
         }
     }
     
-    public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
+    /*public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
         if type == .voIP {
             let uuid = UUID()
+            print(payload)
+            
+            
             //let caller = payload.dictionaryPayload["from_number"] as? String ?? ""
             //let callee = payload.dictionaryPayload["to_number"] as? String ?? ""
             //let data = ["event": SipEvent.PushReceive.rawValue, "body": ["call_id": "\(uuid)", "from_number": caller, "callee": callee]] as [String: Any]
            //Self.eventSink?(data)
             
-            reportIncommingCall(uuid, "Test", completion: completion)
+            //reportIncommingCall(uuid, "Test", completion: completion)
         }
-    }
+    }*/
     
-    public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
+    /*public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
         
-    }
-    
-    private func reportIncommingCall(_ uuid: UUID, _ caller: String, completion: @escaping () -> Void) {
-        let update = CXCallUpdate()
-        update.remoteHandle = CXHandle(type: .phoneNumber,
-                                       value: "1077")
-        update.localizedCallerName = "1077"
-        
-        self.provider?.reportNewIncomingCall(with: uuid, update: update , completion: { [weak self] error in
-            completion()
-        })
+    }*/
+}
+
+extension String {
+    func toUnsafeMutableRawPointer() -> UnsafeMutableRawPointer? {
+        var utf8 = self.utf8CString
+        return utf8.withUnsafeMutableBytes { buffer in
+            if let baseAddress = buffer.baseAddress {
+                return UnsafeMutableRawPointer(baseAddress.assumingMemoryBound(to: Int8.self))
+            } else {
+                return nil
+            }
+        }
     }
 }
