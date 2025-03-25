@@ -46,7 +46,7 @@ class SipManager: NSObject {
             mCore.pushNotificationEnabled = true
             mProviderDelegate = CallKitProviderDelegate(sipManager: self)
             coreDelegate = CoreDelegateStub(
-                onPushNotificationReceived: {(core: Core, payload: String) in
+                /*onPushNotificationReceived: {(core: Core, payload: String) in
                     if let jsonData = payload.data(using: .utf8) {
                         do {
                             let pushNotification = try JSONDecoder().decode(PushNotification.self, from: jsonData)
@@ -54,7 +54,7 @@ class SipManager: NSObject {
                             self.mProviderDelegate?.incomingCallUUID = UUID(uuidString: pushNotification.aps.alert.uuid)
                         } catch { }
                     }
-                },
+                },*/
                 onCallStateChanged: {(
                     core: Core,
                     call: Call,
@@ -79,6 +79,7 @@ class SipManager: NSObject {
                         }
                         
                         self.mCall = call
+                        try? self.mCall?.accept()
                         self.isCallIncoming = true
                         break
                     case .IncomingReceived:
@@ -589,6 +590,10 @@ class SipManager: NSObject {
     
     func stopRecording() {
         mCore.currentCall?.stopRecording()
+    }
+    
+    func registerDevice(voipToken: String) {
+        mCore.didRegisterForRemotePushWithStringifiedToken(deviceTokenStr: voipToken)
     }
 }
 

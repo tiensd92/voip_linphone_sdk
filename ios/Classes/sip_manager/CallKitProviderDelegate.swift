@@ -35,19 +35,22 @@ class CallKitProviderDelegate : NSObject
     }
     
     func incomingCall() {
-        guard let uuid = incomingCallUUID else {
+        /*guard let uuid = incomingCallUUID else {
             return
-        }
+        }*/
+        
+        incomingCallUUID = UUID()
         
         let update = CXCallUpdate()
         update.remoteHandle = CXHandle(type:.generic, value: sipManager.incomingCallName ?? "")
         
-        provider.reportNewIncomingCall(with: uuid, update: update, completion: { error in }) // Report to CallKit a call is incoming
+        provider.reportNewIncomingCall(with: incomingCallUUID!, update: update, completion: { error in }) // Report to CallKit a call is incoming
     }
     
     func stopCall() {
         // Report to CallKit a call must end
         if let uuid = incomingCallUUID {
+            incomingCallUUID = nil
             let endCallAction = CXEndCallAction(call: uuid)
             let transaction = CXTransaction(action: endCallAction)
             
@@ -70,6 +73,7 @@ extension CallKitProviderDelegate: CXProviderDelegate {
         
         sipManager.isCallRunning = false
         sipManager.isCallIncoming = false
+        incomingCallUUID = nil
         action.fulfill()
     }
     

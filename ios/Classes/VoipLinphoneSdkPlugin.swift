@@ -178,14 +178,7 @@ extension VoipLinphoneSdkPlugin: PKPushRegistryDelegate {
             registry.pushToken(for: .voIP)
             Self.eventSink?(data)
             
-            if let rawPointer = voipToken.toUnsafeMutableRawPointer() {
-                let stringLength = strlen(rawPointer.assumingMemoryBound(to: CChar.self))
-                print("String length from toUnsafeMutableRawPointer(): \(stringLength)")
-                let restoredString = String(cString: rawPointer.assumingMemoryBound(to: CChar.self))
-                print("Restored string from toUnsafeMutableRawPointer(): \(restoredString)")
-            } else {
-                print("Failed to get raw pointer.")
-            }
+            self.sipManager.registerDevice(voipToken: voipToken)
         }
     }
     
