@@ -34,9 +34,11 @@ class SipManager: NSObject {
     static let DURATION_KEY: String = "duration"
     static let MESSAGE_KEY: String = "message"
     static let TOTAL_MISSED_KEY: String = "totalMissed"
+    static let RECORD_FILE: String = "recordFile"
     
     var mProviderDelegate: CallKitProviderDelegate!
     var timerIncoming: Timer?
+    var recordFile: String?
     
     public override init() {
         super.init()
@@ -44,26 +46,25 @@ class SipManager: NSObject {
         do {
             try mCore = Factory.Instance.createCore(configPath: "", factoryConfigPath: "", systemContext: nil)
             mCore.pushNotificationEnabled = true
+            mCore.callkitEnabled = true
+            mCore.autoIterateEnabled = true
             mProviderDelegate = CallKitProviderDelegate(sipManager: self)
             coreDelegate = CoreDelegateStub(
                 /*onPushNotificationReceived: {(core: Core, payload: String) in
-                    if let jsonData = payload.data(using: .utf8) {
-                        do {
-                            let pushNotification = try JSONDecoder().decode(PushNotification.self, from: jsonData)
-                            self.mCore.processPushNotification(callId: pushNotification.aps.alert.incoming_caller_id)
-                            self.mProviderDelegate?.incomingCallUUID = UUID(uuidString: pushNotification.aps.alert.uuid)
-                        } catch { }
-                    }
-                },*/
+                 if let jsonData = payload.data(using: .utf8) {
+                 do {
+                 let pushNotification = try JSONDecoder().decode(PushNotification.self, from: jsonData)
+                 self.mCore.processPushNotification(callId: pushNotification.aps.alert.incoming_caller_id)
+                 self.mProviderDelegate?.incomingCallUUID = UUID(uuidString: pushNotification.aps.alert.uuid)
+                 } catch { }
+                 }
+                 },*/
                 onCallStateChanged: {(
                     core: Core,
                     call: Call,
                     state: Call.State?,
                     message: String
                 ) in
-                    
-                    print("state: \(state) - message: \(message)")
-                    
                     switch (state) {
                     case .PushIncomingReceived:
                         self.timerIncoming?.invalidate()
@@ -107,7 +108,7 @@ class SipManager: NSObject {
                         self.timerIncoming?.invalidate()
                         self.isCallIncoming = false
                         self.isCallRunning = true
-
+                        
                         let callId = call.callLog?.callId ?? ""
                         self.sendEvent(eventName: SipEvent.Connected.rawValue, body: [SipManager.CALL_ID_KEY: callId])
                         break
@@ -132,7 +133,7 @@ class SipManager: NSObject {
                         self.sendEvent(eventName: SipEvent.Resuming.rawValue, body: nil)
                         break
                     case .Released:
-                        if(self.isMissed(callLog: call.callLog)) {
+                        if self.isMissed(callLog: call.callLog) {
                             let callee = call.remoteAddress?.username ?? ""
                             let totalMissed = core.missedCallsCount
                             self.sendEvent(eventName: SipEvent.Missed.rawValue, body: [SipManager.PHONE_NUMBER_KEY: callee, SipManager.TOTAL_MISSED_KEY: totalMissed])
@@ -144,17 +145,17 @@ class SipManager: NSObject {
                         break
                     case .End:
                         let duration = self.timeStartStreamingRunning == 0 ? 0 : Int64(Date().timeIntervalSince1970 * 1000) - self.timeStartStreamingRunning
-                        self.sendEvent(eventName: SipEvent.Hangup.rawValue, body: [SipManager.DURATION_KEY: duration])
+                        self.sendEvent(eventName: SipEvent.Hangup.rawValue, body: [SipManager.DURATION_KEY: duration, SipManager.RECORD_FILE: self.recordFile])
                         self.timeStartStreamingRunning = 0
                         
-                        if (self.isCallRunning) {
+                        if self.isCallRunning {
                             self.mProviderDelegate?.stopCall()
                         }
                         break
                     case .Error:
                         self.sendEvent(eventName: SipEvent.Error.rawValue, body: [SipManager.MESSAGE_KEY: message])
                         
-                        if (self.isCallRunning) {
+                        if self.isCallRunning {
                             self.mProviderDelegate?.stopCall()
                         }
                         break
@@ -227,9 +228,20 @@ class SipManager: NSObject {
         try accountParams.setServeraddress(newValue: address)
         accountParams.registerEnabled = true
         // Enable push notifications on this account
-        //accountParams.pushNotificationAllowed = true
+        accountParams.pushNotificationAllowed = true
+        accountParams.remotePushNotificationAllowed = true
+        
         // We're in a sandbox application, so we must set the provider to "apns.dev" since it will be "apns" by default, which is used only for production apps
-        // accountParams.pushNotificationConfig?.provider = "apns.dev"
+        #if DEBUG
+            let pushEnvironment = ".dev"
+        #else
+            let pushEnvironment = ""
+        #endif
+        
+        if accountParams.pushNotificationConfig?.provider != ("apns" + pushEnvironment) {
+            accountParams.pushNotificationConfig?.provider = "apns" + pushEnvironment
+        }
+
         let account = try mCore.createAccount(params: accountParams)
         mCore.addAuthInfo(info: authInfo)
         try mCore.addAccount(account: account)
@@ -252,17 +264,26 @@ class SipManager: NSObject {
             // We also need a CallParams object
             // Create call params expects a Call object for incoming calls, but for outgoing we must use null safely
             let params = try mCore.createCallParams(call: nil)
+            let uuid = UUID()
             
             // We can now configure it
             // Here we ask for no encryption but we could ask for ZRTP/SRTP/DTLS
             params.mediaEncryption = MediaEncryption.None
-            params.addCustomHeader(headerName: SipManager.X_UUID_HEADER, headerValue: UUID().uuidString)
+            params.addCustomHeader(headerName: SipManager.X_UUID_HEADER, headerValue: uuid.uuidString)
+            
+            if isRecording {
+                self.recordFile =  generateRecordingFile(uuid: uuid)
+                params.recordFile = self.recordFile
+            } else {
+                self.recordFile = nil
+            }
             
             // If we wanted to start the call with video directly
             //params.videoEnabled = true
             
             // Finally we start the call
             if let call = mCore.inviteAddressWithParams(addr: remoteAddress, params: params) {
+                self.isRecording = isRecording
                 NSLog("Call successful")
                 result?(true)
             } else {
@@ -577,15 +598,18 @@ class SipManager: NSObject {
         result(audioDevice)
     }
     
-    func startRecording() {
-        if let uuidString = mCore.currentCall?.params?.getCustomHeader(headerName: SipManager.X_UUID_HEADER) {
-            let duration = self.timeStartStreamingRunning == 0 ? 0 : Int64(Date().timeIntervalSince1970 * 1000) - self.timeStartStreamingRunning
-            if let appFolder = Bundle.main.resourceURL {
-                let pathFile = appFolder.appendingPathComponent("\(uuidString)_\(duration).mp3")
-                mCore.recordFile = pathFile.absoluteString
-                mCore.currentCall?.startRecording()
-            }
+    func generateRecordingFile(uuid: UUID) -> String? {
+        do {
+            let appSupportDir = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            let filePath = appSupportDir.appendingPathComponent("\(uuid.uuidString).wav").path
+            return filePath
+        } catch {
+            return nil
         }
+    }
+    
+    func startRecording() {
+        mCore.currentCall?.startRecording()
     }
     
     func stopRecording() {
