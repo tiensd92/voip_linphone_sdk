@@ -17,7 +17,9 @@ class CallKitProviderDelegate : NSObject
     let mCallController = CXCallController()
     var sipManager : SipManager!
     
-    var incomingCallUUID : UUID?
+    var incomingNotification : PushNotification?
+    var isCallIncoming = false
+    var timerIncoming: Timer?
     
     init(sipManager: SipManager) {
         self.sipManager = sipManager
@@ -30,32 +32,42 @@ class CallKitProviderDelegate : NSObject
         
         provider = CXProvider(configuration: providerConfiguration)
         super.init()
-        provider.setDelegate(self, queue: nil) // The CXProvider delegate will trigger CallKit related callbacks
+        //provider.setDelegate(self, queue: nil) // The CXProvider delegate will trigger CallKit related callbacks
         
     }
     
-    func incomingCall() {
-        /*guard let uuid = incomingCallUUID else {
+    func incomingCall(_ notification: PushNotification) {
+        if isCallIncoming {
+            timerIncoming?.invalidate()
+            timerIncoming = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) {_ in
+                self.stopCall()
+            }
             return
-        }*/
+        }
         
-        incomingCallUUID = UUID()
+        timerIncoming?.invalidate()
+        timerIncoming = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) {_ in
+            self.stopCall()
+        }
+        
+        self.incomingNotification = notification
+        isCallIncoming = true
         
         let update = CXCallUpdate()
-        update.remoteHandle = CXHandle(type:.generic, value: sipManager.incomingCallName ?? "")
-        
-        provider.reportNewIncomingCall(with: incomingCallUUID!, update: update, completion: { error in }) // Report to CallKit a call is incoming
+        update.remoteHandle = CXHandle(type:.generic, value: notification.displayName)
+        provider.reportNewIncomingCall(with: notification.uuid, update: update, completion: { error in })
     }
     
     func stopCall() {
         // Report to CallKit a call must end
-        if let uuid = incomingCallUUID {
-            incomingCallUUID = nil
+        if let uuid = self.incomingNotification?.uuid {
             let endCallAction = CXEndCallAction(call: uuid)
             let transaction = CXTransaction(action: endCallAction)
-            
             mCallController.request(transaction, completion: { error in })
         }
+        
+        isCallIncoming = false
+        self.incomingNotification = nil
     }
 }
 
@@ -65,31 +77,18 @@ class CallKitProviderDelegate : NSObject
 extension CallKitProviderDelegate: CXProviderDelegate {
     
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
-        do {
-            if (sipManager.mCall?.state != .End && sipManager.mCall?.state != .Released)  {
-                try sipManager.mCall?.terminate()
-            }
-        } catch { NSLog(error.localizedDescription) }
-        
-        sipManager.isCallRunning = false
-        sipManager.isCallIncoming = false
-        incomingCallUUID = nil
         action.fulfill()
     }
     
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-        do {
-            // The audio stream is going to start shortly: the AVAudioSession must be configured now.
-            // It is worth to note that an application does not have permission to configure the
-            // AVAudioSession outside of this delegate action while it is running in background,
-            // which is usually the case in an incoming call scenario.
-            sipManager.mCore.configureAudioSession();
-            try sipManager.mCall?.accept()
-            sipManager.isCallRunning = true
-        } catch {
-            print(error)
+        if let address = incomingNotification?.fromUri, let uuid = incomingNotification?.uuid, let caller = incomingNotification?.displayName {
+            let url = URL(string: "rubiklab-2ndphone://2ndphone.com/call?address=\(address)&uuid=\(uuid)&caller=\(caller)")!
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
         }
+        
+        isCallIncoming = false
         action.fulfill()
+        stopCall()
     }
     
     func provider(_ provider: CXProvider, perform action: CXSetHeldCallAction) {}

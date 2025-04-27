@@ -20,11 +20,6 @@ class SipManager: NSObject {
     private var isRecording: Bool = false
     private var coreDelegate : CoreDelegate!
     private var provider: CXProvider?
-    var mCall: Call?
-    var isCallRunning: Bool = false
-    var isCallIncoming: Bool = false
-    var incomingCallName: String?
-    var remoteAddress : String = "Nobody yet"
     
     static let X_UUID_HEADER: String = "X-UUID"
     static let EXTENSTION_KEY: String = "extension"
@@ -50,15 +45,11 @@ class SipManager: NSObject {
             mCore.autoIterateEnabled = true
             mProviderDelegate = CallKitProviderDelegate(sipManager: self)
             coreDelegate = CoreDelegateStub(
-                /*onPushNotificationReceived: {(core: Core, payload: String) in
-                 if let jsonData = payload.data(using: .utf8) {
-                 do {
-                 let pushNotification = try JSONDecoder().decode(PushNotification.self, from: jsonData)
-                 self.mCore.processPushNotification(callId: pushNotification.aps.alert.incoming_caller_id)
-                 self.mProviderDelegate?.incomingCallUUID = UUID(uuidString: pushNotification.aps.alert.uuid)
-                 } catch { }
-                 }
-                 },*/
+                onPushNotificationReceived: {(core: Core, payload: String) in
+                    if let jsonData = payload.data(using: .utf8), let pushNotification = try? JSONDecoder().decode(PushNotification.self, from: jsonData) {
+                        self.mProviderDelegate?.incomingCall(pushNotification)
+                    }
+                },
                 onCallStateChanged: {(
                     core: Core,
                     call: Call,
@@ -67,31 +58,8 @@ class SipManager: NSObject {
                 ) in
                     switch (state) {
                     case .PushIncomingReceived:
-                        self.timerIncoming?.invalidate()
-                        self.timerIncoming = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) {
-                            timer in
-                            self.isCallIncoming = false
-                            self.isCallRunning = false
-                            self.mProviderDelegate?.stopCall()
-                        }
-                        
-                        if !self.isCallIncoming {
-                            self.mProviderDelegate?.incomingCall()
-                        }
-                        
-                        self.mCall = call
-                        try? self.mCall?.accept()
-                        self.isCallIncoming = true
                         break
                     case .IncomingReceived:
-                        // If app is in foreground, it's likely that we will receive the SIP invite before the Push notification
-                        if !self.isCallIncoming {
-                            self.mProviderDelegate?.incomingCall()
-                        }
-                        
-                        self.mCall = call
-                        self.isCallIncoming = true
-                        self.remoteAddress = call.remoteAddress!.asStringUriOnly()
                         break
                     case .OutgoingEarlyMedia:
                         let ext = core.defaultAccount?.contactAddress?.username ?? ""
@@ -105,10 +73,6 @@ class SipManager: NSObject {
                         self.sendEvent(eventName: SipEvent.Ring.rawValue, body: [SipManager.EXTENSTION_KEY: ext, SipManager.PHONE_NUMBER_KEY: phoneNumber, SipManager.CALL_TYPE_KEY: CallType.outbound.rawValue])
                         break
                     case .Connected:
-                        self.timerIncoming?.invalidate()
-                        self.isCallIncoming = false
-                        self.isCallRunning = true
-                        
                         let callId = call.callLog?.callId ?? ""
                         self.sendEvent(eventName: SipEvent.Connected.rawValue, body: [SipManager.CALL_ID_KEY: callId])
                         break
@@ -138,26 +102,14 @@ class SipManager: NSObject {
                             let totalMissed = core.missedCallsCount
                             self.sendEvent(eventName: SipEvent.Missed.rawValue, body: [SipManager.PHONE_NUMBER_KEY: callee, SipManager.TOTAL_MISSED_KEY: totalMissed])
                         }
-                        
-                        if (self.isCallRunning) {
-                            self.mProviderDelegate?.stopCall()
-                        }
                         break
                     case .End:
                         let duration = self.timeStartStreamingRunning == 0 ? 0 : Int64(Date().timeIntervalSince1970 * 1000) - self.timeStartStreamingRunning
                         self.sendEvent(eventName: SipEvent.Hangup.rawValue, body: [SipManager.DURATION_KEY: duration, SipManager.RECORD_FILE: self.recordFile])
                         self.timeStartStreamingRunning = 0
-                        
-                        if self.isCallRunning {
-                            self.mProviderDelegate?.stopCall()
-                        }
                         break
                     case .Error:
                         self.sendEvent(eventName: SipEvent.Error.rawValue, body: [SipManager.MESSAGE_KEY: message])
-                        
-                        if self.isCallRunning {
-                            self.mProviderDelegate?.stopCall()
-                        }
                         break
                     case .IncomingEarlyMedia: break
                     case .EarlyUpdatedByRemote: break
@@ -229,26 +181,26 @@ class SipManager: NSObject {
         accountParams.registerEnabled = true
         // Enable push notifications on this account
         accountParams.pushNotificationAllowed = true
-        accountParams.remotePushNotificationAllowed = true
+        //accountParams.remotePushNotificationAllowed = true
         
         // We're in a sandbox application, so we must set the provider to "apns.dev" since it will be "apns" by default, which is used only for production apps
-        #if DEBUG
-            let pushEnvironment = ".dev"
-        #else
-            let pushEnvironment = ""
-        #endif
+#if DEBUG
+        let pushEnvironment = ".dev"
+#else
+        let pushEnvironment = ""
+#endif
         
         if accountParams.pushNotificationConfig?.provider != ("apns" + pushEnvironment) {
             accountParams.pushNotificationConfig?.provider = "apns" + pushEnvironment
         }
-
+        
         let account = try mCore.createAccount(params: accountParams)
         mCore.addAuthInfo(info: authInfo)
         try mCore.addAccount(account: account)
         mCore.defaultAccount = account
     }
     
-    func call(recipient: String, isRecording: Bool, result: FlutterResult?) {
+    func call(recipient: String, isRecording: Bool, uuid: UUID? = nil, result: FlutterResult?) {
         NSLog("Try to call")
         do {
             // As for everything we need to get the SIP URI of the remote and convert it sto an Address
@@ -264,7 +216,7 @@ class SipManager: NSObject {
             // We also need a CallParams object
             // Create call params expects a Call object for incoming calls, but for outgoing we must use null safely
             let params = try mCore.createCallParams(call: nil)
-            let uuid = UUID()
+            let uuid = uuid ?? UUID()
             
             // We can now configure it
             // Here we ask for no encryption but we could ask for ZRTP/SRTP/DTLS
@@ -661,13 +613,33 @@ struct APS: Codable {
 }
 
 struct Alert: Codable {
-    let incoming_caller_id: String
-    let incoming_caller_name: String
     let uuid: String
+    let callId: String
+    
+    private enum CodingKeys : String, CodingKey {
+        case callId = "call-id"
+        case uuid = "uuid"
+    }
 }
 
 struct PushNotification: Codable {
     let aps: APS
+    let pnTTL: Int
+    let fromUri: String
+    let displayName: String
+    
+    var uuid: UUID! {
+        get {
+            return UUID.init(uuidString: aps.alert.uuid)
+        }
+    }
+    
+    private enum CodingKeys : String, CodingKey {
+        case aps = "aps"
+        case pnTTL = "pn_ttl"
+        case fromUri = "from-uri"
+        case displayName = "display-name"
+    }
 }
 
 
