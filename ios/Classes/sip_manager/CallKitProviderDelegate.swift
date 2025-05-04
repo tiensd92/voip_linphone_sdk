@@ -20,6 +20,7 @@ class CallKitProviderDelegate : NSObject
     var incomingNotification : PushNotification?
     var isCallIncoming = false
     var timerIncoming: Timer?
+    var timerOutIncoming: Timer?
     
     init(sipManager: SipManager) {
         self.sipManager = sipManager
@@ -32,30 +33,37 @@ class CallKitProviderDelegate : NSObject
         
         provider = CXProvider(configuration: providerConfiguration)
         super.init()
-        //provider.setDelegate(self, queue: nil) // The CXProvider delegate will trigger CallKit related callbacks
+        provider.setDelegate(self, queue: nil) // The CXProvider delegate will trigger CallKit related callbacks
         
     }
     
-    func incomingCall(_ notification: PushNotification) {
-        if isCallIncoming {
-            timerIncoming?.invalidate()
-            timerIncoming = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) {_ in
-                self.stopCall()
-            }
+    func incomingCall() {
+        if !isCallIncoming {
+            return
+        }
+        
+        guard let notification = self.incomingNotification else {
             return
         }
         
         timerIncoming?.invalidate()
-        timerIncoming = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) {_ in
-            self.stopCall()
+        timerIncoming = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { _ in
+            self.timerOutIncoming?.invalidate()
+            
+            let update = CXCallUpdate()
+            update.remoteHandle = CXHandle(type:.generic, value: notification.displayName)
+            
+            self.provider.reportNewIncomingCall(with: notification.uuid, update: update, completion: { error in })
+            
+            self.timerOutIncoming = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { _ in
+                self.stopCall()
+            }
         }
-        
+    }
+    
+    func incomingCallWithNotification(_ notification: PushNotification) {
         self.incomingNotification = notification
         isCallIncoming = true
-        
-        let update = CXCallUpdate()
-        update.remoteHandle = CXHandle(type:.generic, value: notification.displayName)
-        provider.reportNewIncomingCall(with: notification.uuid, update: update, completion: { error in })
     }
     
     func stopCall() {
@@ -68,6 +76,8 @@ class CallKitProviderDelegate : NSObject
         
         isCallIncoming = false
         self.incomingNotification = nil
+        self.timerOutIncoming?.invalidate()
+        self.timerIncoming?.invalidate()
     }
 }
 
@@ -77,15 +87,49 @@ class CallKitProviderDelegate : NSObject
 extension CallKitProviderDelegate: CXProviderDelegate {
     
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
+        isCallIncoming = false
+        self.incomingNotification = nil
+        timerIncoming?.invalidate()
         action.fulfill()
     }
     
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-        if let address = incomingNotification?.fromUri, let uuid = incomingNotification?.uuid, let caller = incomingNotification?.displayName {
-            let url = URL(string: "rubiklab-2ndphone://2ndphone.com/call?address=\(address)&uuid=\(uuid)&caller=\(caller)")!
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+        if let address = incomingNotification?.from, let uuid = incomingNotification?.uuid, let caller = incomingNotification?.displayName {
+            var urlComponents = URLComponents()
+            urlComponents.scheme = "rubiklab-2ndphone"
+            urlComponents.host = "2ndphone.com"
+            urlComponents.path = "/call"
+            
+            let queryParams: [String: Any] = [
+                "address": address,
+                "uuid": uuid.uuidString,
+                "caller": caller
+            ]
+            
+            urlComponents.queryItems = queryParams.compactMap { key, value in
+                let stringValue: String
+                switch value {
+                case let intValue as Int:
+                    stringValue = String(intValue)
+                case let stringValue_ as String:
+                    stringValue = stringValue_
+                case let boolValue as Bool:
+                    stringValue = String(boolValue)
+                case let doubleValue as Double:
+                    stringValue = String(doubleValue)
+                default:
+                    return nil // Skip this key-value pair
+                }
+                
+                return URLQueryItem(name: key, value: stringValue)
+            }
+            
+            if let url = urlComponents.url {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            }
         }
         
+        timerIncoming?.invalidate()
         isCallIncoming = false
         action.fulfill()
         stopCall()

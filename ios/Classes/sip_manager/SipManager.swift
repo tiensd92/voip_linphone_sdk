@@ -43,11 +43,12 @@ class SipManager: NSObject {
             mCore.pushNotificationEnabled = true
             mCore.callkitEnabled = true
             mCore.autoIterateEnabled = true
+            mCore.keepAliveEnabled = true
             mProviderDelegate = CallKitProviderDelegate(sipManager: self)
             coreDelegate = CoreDelegateStub(
                 onPushNotificationReceived: {(core: Core, payload: String) in
                     if let jsonData = payload.data(using: .utf8), let pushNotification = try? JSONDecoder().decode(PushNotification.self, from: jsonData) {
-                        self.mProviderDelegate?.incomingCall(pushNotification)
+                        self.mProviderDelegate?.incomingCallWithNotification(pushNotification)
                     }
                 },
                 onCallStateChanged: {(
@@ -102,6 +103,9 @@ class SipManager: NSObject {
                             let totalMissed = core.missedCallsCount
                             self.sendEvent(eventName: SipEvent.Missed.rawValue, body: [SipManager.PHONE_NUMBER_KEY: callee, SipManager.TOTAL_MISSED_KEY: totalMissed])
                         }
+                        
+                        self.mProviderDelegate?.incomingCall()
+                        
                         break
                     case .End:
                         let duration = self.timeStartStreamingRunning == 0 ? 0 : Int64(Date().timeIntervalSince1970 * 1000) - self.timeStartStreamingRunning
@@ -211,6 +215,7 @@ class SipManager: NSObject {
                 return
             }
             let sipUri = String("sip:" + recipient + "@" + domain!)
+            print(sipUri)
             let remoteAddress = try Factory.Instance.createAddress(addr: sipUri)
             
             // We also need a CallParams object
@@ -571,6 +576,10 @@ class SipManager: NSObject {
     func registerDevice(voipToken: String) {
         mCore.didRegisterForRemotePushWithStringifiedToken(deviceTokenStr: voipToken)
     }
+    
+    func incomingCallWithNotification(_ pushNotification: PushNotification) {
+        self.mProviderDelegate?.incomingCallWithNotification(pushNotification)
+    }
 }
 
 extension AudioDevice.Kind {
@@ -610,35 +619,55 @@ extension AudioDevice.Kind {
 
 struct APS: Codable {
     let alert: Alert
+    
+    private enum CodingKeys : String, CodingKey {
+        case alert = "alert"
+    }
+    
+    init(dictionary: [AnyHashable : Any]) {
+        self.alert = Alert(dictionary: dictionary[CodingKeys.alert.rawValue] as! [AnyHashable : Any])
+    }
 }
 
 struct Alert: Codable {
-    let uuid: String
-    let callId: String
+    let incomingCallerName: String
     
     private enum CodingKeys : String, CodingKey {
-        case callId = "call-id"
-        case uuid = "uuid"
+        case incomingCallerName = "incoming_caller_name"
+    }
+    
+    init(dictionary: [AnyHashable : Any]) {
+        self.incomingCallerName = dictionary[CodingKeys.incomingCallerName.rawValue] as! String
     }
 }
 
 struct PushNotification: Codable {
     let aps: APS
-    let pnTTL: Int
-    let fromUri: String
-    let displayName: String
+    let from: String
+    let callId: String
+    
+    var displayName: String {
+        get {
+            return aps.alert.incomingCallerName
+        }
+    }
     
     var uuid: UUID! {
         get {
-            return UUID.init(uuidString: aps.alert.uuid)
+            return UUID(uuidString: callId)
         }
     }
     
     private enum CodingKeys : String, CodingKey {
+        case from = "from"
+        case callId = "call-id"
         case aps = "aps"
-        case pnTTL = "pn_ttl"
-        case fromUri = "from-uri"
-        case displayName = "display-name"
+    }
+    
+    init(dictionary: [AnyHashable : Any]) {
+        self.callId = dictionary[CodingKeys.callId.rawValue] as! String
+        self.from = dictionary[CodingKeys.from.rawValue] as! String
+        self.aps = APS(dictionary: dictionary[CodingKeys.aps.rawValue] as! [AnyHashable : Any])
     }
 }
 

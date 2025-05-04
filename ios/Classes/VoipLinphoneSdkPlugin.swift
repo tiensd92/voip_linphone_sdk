@@ -182,20 +182,13 @@ extension VoipLinphoneSdkPlugin: PKPushRegistryDelegate {
         }
     }
     
-    /*public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
+    public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
         if type == .voIP {
             let uuid = UUID()
-            print(payload)
-            
-            
-            //let caller = payload.dictionaryPayload["from_number"] as? String ?? ""
-            //let callee = payload.dictionaryPayload["to_number"] as? String ?? ""
-            //let data = ["event": SipEvent.PushReceive.rawValue, "body": ["call_id": "\(uuid)", "from_number": caller, "callee": callee]] as [String: Any]
-           //Self.eventSink?(data)
-            
-            //reportIncommingCall(uuid, "Test", completion: completion)
+            let notification = PushNotification(dictionary: payload.dictionaryPayload)
+            SipManager.instance.incomingCallWithNotification(notification)
         }
-    }*/
+    }
     
     /*public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
         
