@@ -50,6 +50,10 @@ android {
     dependencies {
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.mockito:mockito-core:5.0.0")
+
+        // Latest version is 5.0.x, using + to get the latest available
+        implementation("org.linphone:linphone-sdk-android:5.0+")
+
     }
 
     testOptions {
