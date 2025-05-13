@@ -41,9 +41,9 @@ class SipManager: NSObject {
         do {
             try mCore = Factory.Instance.createCore(configPath: "", factoryConfigPath: "", systemContext: nil)
             mCore.pushNotificationEnabled = true
-            mCore.callkitEnabled = true
-            mCore.autoIterateEnabled = true
-            mCore.keepAliveEnabled = true
+            //mCore.callkitEnabled = true
+            //mCore.autoIterateEnabled = true
+            //mCore.keepAliveEnabled = true
             mProviderDelegate = CallKitProviderDelegate(sipManager: self)
             coreDelegate = CoreDelegateStub(
                 onPushNotificationReceived: {(core: Core, payload: String) in
