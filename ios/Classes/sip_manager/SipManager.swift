@@ -41,10 +41,11 @@ class SipManager: NSObject {
         do {
             try mCore = Factory.Instance.createCore(configPath: "", factoryConfigPath: "", systemContext: nil)
             mCore.pushNotificationEnabled = true
-            //mCore.callkitEnabled = true
-            //mCore.autoIterateEnabled = true
-            //mCore.keepAliveEnabled = true
+            mCore.callkitEnabled = true
+            mCore.autoIterateEnabled = true
+            mCore.keepAliveEnabled = true
             mProviderDelegate = CallKitProviderDelegate(sipManager: self)
+            
             coreDelegate = CoreDelegateStub(
                 onPushNotificationReceived: {(core: Core, payload: String) in
                     if let jsonData = payload.data(using: .utf8), let pushNotification = try? JSONDecoder().decode(PushNotification.self, from: jsonData) {
@@ -59,8 +60,10 @@ class SipManager: NSObject {
                 ) in
                     switch (state) {
                     case .PushIncomingReceived:
+                        print("PushIncomingReceived \(call.remoteAddress?.asStringUriOnly())")
                         break
                     case .IncomingReceived:
+                        print("IncomingReceived \(call.remoteAddress?.asStringUriOnly())")
                         break
                     case .OutgoingEarlyMedia:
                         let ext = core.defaultAccount?.contactAddress?.username ?? ""

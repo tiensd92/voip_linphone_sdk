@@ -1,9 +1,10 @@
 package com.voip.linphone.sdk
 
+import android.content.Context
+import androidx.annotation.WorkerThread
 import com.voip.linphone.sdk.models.SipConfiguaration
 import com.voip.linphone.sdk.utils.CallType
 import com.voip.linphone.sdk.utils.SipEvent
-import io.flutter.plugin.common.MethodChannel
 import org.linphone.core.AudioDevice
 import org.linphone.core.Call
 import org.linphone.core.CallLog
@@ -11,6 +12,7 @@ import org.linphone.core.Core
 import org.linphone.core.CoreListener
 import org.linphone.core.CoreListenerStub
 import org.linphone.core.Factory
+import org.linphone.core.LogCollectionState
 import org.linphone.core.MediaEncryption
 import org.linphone.core.ProxyConfig
 import org.linphone.core.Reason
@@ -23,15 +25,29 @@ import java.util.UUID
 class SipManager {
     private lateinit var mCore: Core
     private lateinit var mCoreListener: CoreListener
+
     private var timeStartStreamingRunning: Long = 0
     private var isPause: Boolean = false
     private var isRecording: Boolean = false
     private var timerIncoming: Timer? = null
     private var recordFile: String? = null
 
-    init {
+    fun getConfigPath(context: Context): String {
+        return context.filesDir.absolutePath + "/" + CONFIG_FILE_NAME
+    }
+
+    fun getFactoryConfigPath(context: Context): String {
+        return context.filesDir.absolutePath + "/linphonerc"
+    }
+
+    @WorkerThread
+    fun initialize(context: Context, sipConfiguration: SipConfiguaration) {
         try {
-            mCore = Factory.instance().createCore("", "", null)
+            Factory.instance().setLogCollectionPath(context.filesDir.absolutePath)
+            Factory.instance().enableLogCollection(LogCollectionState.Enabled)
+            // For VFS
+            Factory.instance().setCacheDir(context.cacheDir.absolutePath)
+            mCore = Factory.instance().createCore(null, null, context)
             mCore.isPushNotificationEnabled = true
             mCoreListener = object : CoreListenerStub() {
                 override fun onRegistrationStateChanged(
@@ -164,16 +180,17 @@ class SipManager {
                     }
                 }
             }
-        } catch (_: Exception) {
+            initSipModule(sipConfiguration)
+        } catch (exception: Exception) {
+            throw exception
         }
     }
 
-    fun initSipModule(sipConfiguration: SipConfiguaration) {
+    @WorkerThread
+    private fun initSipModule(sipConfiguration: SipConfiguaration) {
         mCore.isKeepAliveEnabled = sipConfiguration.isKeepAlive
         if (mCore.defaultAccount?.params?.isRegisterEnabled == true) {
-            unregisterSipAccount(result = null)
-        } else {
-            mCore.start()
+            unregisterSipAccount()
         }
 
         mCore.removeListener(mCoreListener)
@@ -185,8 +202,10 @@ class SipManager {
             port = sipConfiguration.port,
             transportType = sipConfiguration.toLpTransportType()
         )
+        mCore.start()
     }
 
+    @WorkerThread
     private fun initSipAccount(
         ext: String,
         password: String,
@@ -196,11 +215,12 @@ class SipManager {
     ) {
         val authInfo = Factory.instance().createAuthInfo(
             ext,
-            "",
+            null,
             password,
-            "",
-            "",
-            domain
+            null,
+            null,
+            domain,
+            null,
         )
         val accountParams = mCore.createAccountParams()
         val identity = Factory.instance().createAddress("sip:$ext@$domain")
@@ -219,9 +239,10 @@ class SipManager {
         mCore.defaultAccount = account
     }
 
-    fun unregisterSipAccount(result: MethodChannel.Result?) {
+    @WorkerThread
+    fun unregisterSipAccount(): Boolean {
         if (mCore.defaultAccount == null) {
-            result?.success(false)
+            return false
         } else {
             val account = mCore.defaultAccount!!
             val params = account.params
@@ -230,62 +251,70 @@ class SipManager {
             account.params = clonedParams
             mCore.clearProxyConfig()
             deleteSipAccount()
-            result?.success(true)
+            return true
         }
     }
 
-    fun getCallId(result: MethodChannel.Result?) {
+    @WorkerThread
+    fun getCallId(): String? {
         val callId = mCore.currentCall?.callLog?.callId
         if (callId?.isEmpty() == true) {
-            result?.success(callId)
-        } else {
-            result?.error("404", "Call ID not found", null)
+            return callId
         }
+
+        throw Exception("Call ID not found")
     }
 
-    fun getMissCalls(result: MethodChannel.Result?) {
-        result?.success(mCore.missedCallsCount)
+    @WorkerThread
+    fun getMissCalls(): Int {
+        return mCore.missedCallsCount
     }
 
-    fun getSipReistrationState(result: MethodChannel.Result?) {
+    @WorkerThread
+    fun getSipReistrationState(): String {
         val state = mCore.defaultAccount?.state
         if (state != null) {
-            result?.success(state.name)
-        } else {
-            result?.error("404", "Register state not found", null)
+            return state.name
         }
+
+        throw Exception("Register state not found")
     }
 
-    fun isMicEnabled(result: MethodChannel.Result?) {
-        result?.success(mCore.isMicEnabled)
+    @WorkerThread
+    fun isMicEnabled(): Boolean {
+        return mCore.isMicEnabled
     }
 
-    fun isSpeakerEnabled(result: MethodChannel.Result?) {
+    @WorkerThread
+    fun isSpeakerEnabled(): Boolean {
         val currentAudioDevice = mCore.currentCall?.outputAudioDevice
         val speakerEnabled = currentAudioDevice?.type == AudioDevice.Type.Speaker
-        result?.success(speakerEnabled)
+        return speakerEnabled
     }
 
+    @WorkerThread
     fun removeListener() {
         mCore.removeListener(mCoreListener)
     }
 
-
-    fun getAudioDevices(result: MethodChannel.Result?) {
+    @WorkerThread
+    fun getAudioDevices(): Map<String, String> {
         val audioDevices = mCore.audioDevices
         var mapAudioDevices = mutableMapOf<String, String>()
         for (audioDevice in audioDevices) {
             mapAudioDevices[audioDevice.type.name] = audioDevice.deviceName
         }
 
-        result?.success(mapAudioDevices)
+        return mapAudioDevices
     }
 
-    fun getCurrentAudioDevice(result: MethodChannel.Result?) {
+    @WorkerThread
+    fun getCurrentAudioDevice(): String? {
         val audioDevice = mCore.currentCall?.outputAudioDevice?.type?.name
-        result?.success(audioDevice)
+        return audioDevice
     }
 
+    @WorkerThread
     private fun deleteSipAccount() {
         // To completely remove an Account
         mCore.defaultAccount?.let { account ->
@@ -299,58 +328,51 @@ class SipManager {
         }
     }
 
+    @WorkerThread
     fun call(
         recipient: String,
         isRecording: Boolean,
         uuid: UUID? = null,
-        result: MethodChannel.Result?
     ) {
-        try {
-            // As for everything we need to get the SIP URI of the remote and convert it sto an Address
-            val domain: String? = mCore.defaultAccount?.params?.domain
-            if (domain == null) {
-                result?.error("500", "Can't create sip uri", null)
-                return
-            }
+        // As for everything we need to get the SIP URI of the remote and convert it sto an Address
+        val domain: String? = mCore.defaultAccount?.params?.domain
+        if (domain == null) {
+            throw Exception("Can't create sip uri")
+        }
 
-            val sipUri = "sip:$recipient@$domain"
-            val remoteAddress = Factory.instance().createAddress(sipUri)
+        val sipUri = "sip:$recipient@$domain"
+        val remoteAddress = Factory.instance().createAddress(sipUri)
 
-            // We also need a CallParams object
-            // Create call params expects a Call object for incoming calls, but for outgoing we must use null safely
-            val params = mCore.createCallParams(null)
-            val uuid = uuid ?: UUID.randomUUID()
+        // We also need a CallParams object
+        // Create call params expects a Call object for incoming calls, but for outgoing we must use null safely
+        val params = mCore.createCallParams(null)
+        val uuid = uuid ?: UUID.randomUUID()
 
-            // We can now configure it
-            // Here we ask for no encryption but we could ask for ZRTP/SRTP/DTLS
-            params?.mediaEncryption = MediaEncryption.None
-            params?.addCustomHeader(X_UUID_HEADER, uuid.toString())
+        // We can now configure it
+        // Here we ask for no encryption but we could ask for ZRTP/SRTP/DTLS
+        params?.mediaEncryption = MediaEncryption.None
+        params?.addCustomHeader(X_UUID_HEADER, uuid.toString())
 
-            if (isRecording) {
-                recordFile = generateRecordingFile(uuid = uuid)
-                params?.recordFile = recordFile
-            } else {
-                recordFile = null
-            }
+        if (isRecording) {
+            recordFile = generateRecordingFile(uuid = uuid)
+            params?.recordFile = recordFile
+        } else {
+            recordFile = null
+        }
 
-            // If we wanted to start the call with video directly
-            //params.videoEnabled = true
+        // If we wanted to start the call with video directly
+        //params.videoEnabled = true
 
-            if (remoteAddress == null || params == null) {
-                result?.error("500", "Create Call failed", null)
-                return
-            }
+        if (remoteAddress == null || params == null) {
+            throw Exception("Create Call failed")
+        }
 
-            // Finally we start the call
-            val call = mCore.inviteAddressWithParams(remoteAddress, params)
-            if (call != null) {
-                this.isRecording = isRecording
-                result?.success(true)
-            } else {
-                result?.error("500", "Create Call failed", null)
-            }
-        } catch (exception: Exception) {
-            result?.error("500", exception.localizedMessage, null)
+        // Finally we start the call
+        val call = mCore.inviteAddressWithParams(remoteAddress, params)
+        if (call != null) {
+            this.isRecording = isRecording
+        } else {
+            throw Exception("Create Call failed")
         }
     }
 
@@ -368,217 +390,188 @@ class SipManager {
         return null
     }
 
-    fun hangup(result: MethodChannel.Result?) {
-        try {
-            if (mCore.callsNb == 0) {
-                result?.success(false)
-                return
-            }
-
-            // If the call state isn't paused, we can get it using core.currentCall
-            val coreCall = mCore.currentCall ?: mCore.calls[0]
-            if (coreCall == null) {
-                result?.success(false)
-                return
-            }
-
-            if (coreCall.state == Call.State.IncomingReceived) {
-                coreCall.decline(Reason.Declined)
-                result?.success(false)
-                return
-            }
-
-            // Terminating a call is quite simple
-            coreCall.terminate()
-            result?.success(true)
-            // result("Hangup successful")
-        } catch (exception: Exception) {
-            result?.error("500", exception.localizedMessage, null)
+    @WorkerThread
+    fun hangup(): Boolean {
+        if (mCore.callsNb == 0) {
+            return false
         }
+
+        // If the call state isn't paused, we can get it using core.currentCall
+        val coreCall = mCore.currentCall ?: mCore.calls[0]
+        if (coreCall == null) {
+            return false
+        }
+
+        if (coreCall.state == Call.State.IncomingReceived) {
+            coreCall.decline(Reason.Declined)
+            return false
+        }
+
+        // Terminating a call is quite simple
+        coreCall.terminate()
+        return true
+        // result("Hangup successful")
+
     }
 
-    fun answer(result: MethodChannel.Result?) {
-        try {
-            val coreCall = mCore.currentCall
-            if (coreCall == null) {
-                result?.success(false)
-                return
-            }
-            coreCall.accept()
-            result?.success(true)
-        } catch (exception: Exception) {
-            result?.error("500", exception.localizedMessage, null)
-        }
-    }
-
-    fun reject(result: MethodChannel.Result?) {
-        try {
-            val coreCall = mCore.currentCall
-            if (coreCall == null) {
-                result?.success(false)
-                return
-            }
-
-            // Reject a call
-            coreCall.decline(Reason.Forbidden)
-            coreCall.terminate()
-            result?.success(true)
-            // result("Reject successful")
-        } catch (exception: Exception) {
-            result?.error("500", exception.localizedMessage, null)
-        }
-    }
-
-    fun transfer(recipient: String, result: MethodChannel.Result?) {
-        try {
-            if (mCore.callsNb == 0) {
-                result?.success(false)
-                return
-            }
-
-            val coreCall = mCore.currentCall ?: mCore.calls[0]
-            val domain: String? = mCore.defaultAccount?.params?.domain
-
-            if (domain == null) {
-                result?.success(false)
-                return
-            }
-
-            val address = mCore.interpretUrl("sip:$recipient@$domain)")
-            if (address == null) {
-                result?.success(false)
-                return
-            }
-
-            if (coreCall == null) {
-                result?.success(false)
-                return
-            }
-
-            // Transfer a call
-            coreCall.transferTo(address)
-            result?.success(true)
-        } catch (exception: Exception) {
-            result?.error("500", exception.localizedMessage, null)
-        }
-    }
-
-    fun pause(result: MethodChannel.Result?) {
-        try {
-            if (mCore.callsNb == 0) {
-                result?.success(false)
-                return
-            }
-
-            val coreCall = mCore.currentCall ?: mCore.calls[0]
-
-            if (coreCall == null) {
-                result?.success(false)
-                return
-            }
-
-            // Pause a call
-            coreCall.pause()
-            result?.success(true)
-        } catch (exception: Exception) {
-            result?.error("500", exception.localizedMessage, null)
-        }
-    }
-
-    fun resume(result: MethodChannel.Result?) {
-        try {
-            if (mCore.callsNb == 0) {
-                result?.success(false)
-                return
-            }
-
-            val coreCall = mCore.currentCall ?: mCore.calls[0]
-
-            if (coreCall == null) {
-                result?.success(false)
-                return
-            }
-
-            // Resume a call
-            coreCall.resume()
-            result?.success(true)
-        } catch (exception: Exception) {
-            result?.error("500", exception.localizedMessage, null)
-        }
-    }
-
-    fun sendDTMF(dtmf: String, result: MethodChannel.Result?) {
-        try {
-            val coreCall = mCore.currentCall
-            if (coreCall == null) {
-                result?.success(false)
-                return
-            }
-
-            // Send IVR
-            coreCall.sendDtmf(dtmf[0])
-            result?.success(true)
-        } catch (exception: Exception) {
-            result?.error("500", exception.localizedMessage, null)
-        }
-    }
-
-    fun toggleSpeaker(kind: String, result: MethodChannel.Result?) {
+    @WorkerThread
+    fun answer(): Boolean {
         val coreCall = mCore.currentCall
         if (coreCall == null) {
-            result?.error("404", "Current call not found", null)
-            return
+            return false
+        }
+        coreCall.accept()
+        return true
+    }
+
+    @WorkerThread
+    fun reject(): Boolean {
+        val coreCall = mCore.currentCall
+        if (coreCall == null) {
+            return false
+        }
+
+        // Reject a call
+        coreCall.decline(Reason.Forbidden)
+        coreCall.terminate()
+        return true
+        // result("Reject successful")
+
+    }
+
+    @WorkerThread
+    fun transfer(recipient: String): Boolean {
+        if (mCore.callsNb == 0) {
+            return false
+        }
+
+        val coreCall = mCore.currentCall ?: mCore.calls[0]
+        val domain: String? = mCore.defaultAccount?.params?.domain
+
+        if (domain == null) {
+            return false
+        }
+
+        val address = mCore.interpretUrl("sip:$recipient@$domain)")
+        if (address == null) {
+            return false
+        }
+
+        if (coreCall == null) {
+            return false
+        }
+
+        // Transfer a call
+        coreCall.transferTo(address)
+        return true
+    }
+
+    @WorkerThread
+    fun pause(): Boolean {
+        if (mCore.callsNb == 0) {
+            return false
+        }
+
+        val coreCall = mCore.currentCall ?: mCore.calls[0]
+
+        if (coreCall == null) {
+            return false
+        }
+
+        // Pause a call
+        coreCall.pause()
+        return true
+    }
+
+    @WorkerThread
+    fun resume(): Boolean {
+        if (mCore.callsNb == 0) {
+            return false
+        }
+
+        val coreCall = mCore.currentCall ?: mCore.calls[0]
+
+        if (coreCall == null) {
+            return false
+        }
+
+        // Resume a call
+        coreCall.resume()
+        return true
+    }
+
+    @WorkerThread
+    fun sendDTMF(dtmf: String): Boolean {
+        val coreCall = mCore.currentCall
+        if (coreCall == null) {
+            return false
+        }
+
+        // Send IVR
+        coreCall.sendDtmf(dtmf[0])
+        return true
+    }
+
+    @WorkerThread
+    fun toggleSpeaker(kind: String): Boolean {
+        val coreCall = mCore.currentCall
+        if (coreCall == null) {
+            throw Exception("Current call not found")
         }
 
         val currentAudioDevice = coreCall.outputAudioDevice
-        val audioDeviceKind = AudioDevice.Type.values().first { it.name == kind }
-
+        val audioDeviceKind = AudioDevice.Type.entries.first { it.name == kind }
 
         for (audioDevice in mCore.audioDevices) {
             if (audioDevice.type == audioDeviceKind) {
                 coreCall.outputAudioDevice = audioDevice
-                result?.success(true)
-                return
+                return true
             }
         }
 
-        result?.error("404", "Audio Device Kind not found", null)
+        throw Exception("Audio Device Kind not found")
     }
 
-    fun toggleMic(result: MethodChannel.Result?) {
+    @WorkerThread
+    fun toggleMic(): Boolean {
         val coreCall = mCore.currentCall
         if (coreCall == null) {
-            result?.error("404", "Current call not found", null)
-            return
+            throw Exception("Current call not found")
         }
 
         mCore.isMicEnabled = !mCore.isMicEnabled
-        result?.success(mCore.isMicEnabled)
+        return mCore.isMicEnabled
     }
 
-    fun refreshSipAccount(result: MethodChannel.Result? = null) {
-        mCore.refreshRegisters()
-        result?.success(true)
+    @WorkerThread
+    fun refreshSipAccount(): Boolean {
+        try {
+            mCore.refreshRegisters()
+        } catch (ignore: Exception) {
+        }
+        return true
     }
 
+    @WorkerThread
     fun startRecording() {
         mCore.currentCall?.startRecording()
     }
 
+    @WorkerThread
     private fun isMissed(callLog: CallLog?): Boolean {
         return (callLog?.dir == Call.Dir.Incoming && callLog.status == Call.Status.Missed)
     }
 
     private fun sendEvent(eventName: String, body: Map<String, Any?>?) {
         val data = createParams(eventName = eventName, body = body)
-        VoipLinphoneSdkPlugin.eventSink?.success(data)
+        VoipLinphoneSdkPlugin.sendEvent(data)
     }
 
     private fun createParams(eventName: String, body: Map<String, Any?>?): Map<String, Any?> {
         return if (body == null) {
             mutableMapOf("event" to eventName)
         } else {
-            mutableMapOf("event " to eventName, "body" to body)
+            mutableMapOf("event" to eventName, "body" to body)
         }
     }
 
@@ -593,6 +586,7 @@ class SipManager {
         const val MESSAGE_KEY: String = "message"
         const val TOTAL_MISSED_KEY: String = "totalMissed"
         const val RECORD_FILE: String = "recordFile"
+        const val CONFIG_FILE_NAME = ".linphonerc"
 
         fun instance(): SipManager {
             if (_instance == null) {

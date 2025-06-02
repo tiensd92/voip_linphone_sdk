@@ -84,8 +84,10 @@ class VoipLinphoneSdk {
       final eventName =
           await VoipLinphoneSdkPlatform.instance.getSipRegistrationState();
       try {
-        return RegistrationState.values
-            .firstWhere((event) => event.value == eventName);
+        return RegistrationState.values.firstWhere((event) =>
+            eventName.contains('Registration')
+                ? eventName.contains(event.value)
+                : event.value == eventName);
       } catch (_) {
         return null;
       }

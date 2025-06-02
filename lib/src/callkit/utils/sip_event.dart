@@ -1,15 +1,15 @@
 enum SipEvent {
-  ring('Sip.Ring'),
-  connected('Sip.Connected'),
-  up('Sip.Up'),
-  paused('Sip.Paused'),
-  resuming('Sip.Resuming'),
-  missed('Sip.Missed'),
-  hangup('Sip.Hangup'),
-  error('Sip.Error'),
-  released('Sip.Released'),
-  pushReceive('Sip.PushReceive'),
-  pushToken('Sip.PushToken');
+  ring('Ring'),
+  connected('Connected'),
+  up('Up'),
+  paused('Paused'),
+  resuming('Resuming'),
+  missed('Missed'),
+  hangup('Hangup'),
+  error('Error'),
+  released('Released'),
+  pushReceive('PushReceive'),
+  pushToken('PushToken');
 
   final String value;
 
@@ -20,12 +20,12 @@ enum SipEvent {
 }
 
 enum RegistrationState {
-  none('Registration.None'),
-  progress('Registration.Progress'),
-  ok('Registration.Ok'),
-  cleared('Registration.Cleared'),
-  failed('Registration.Failed'),
-  refreshing('Registration.Refreshing');
+  none('None'),
+  progress('Progress'),
+  ok('Ok'),
+  cleared('Cleared'),
+  failed('Failed'),
+  refreshing('Refreshing');
 
   final String value;
 

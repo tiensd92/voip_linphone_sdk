@@ -49,8 +49,10 @@ class MethodChannelVoipLinphoneSdk extends VoipLinphoneSdkPlatform {
     RegistrationState? state;
 
     try {
-      eventType =
-          SipEvent.values.firstWhere((event) => event.value == eventName);
+      eventType = SipEvent.values.firstWhere((event) =>
+          eventName.contains('Sip')
+              ? eventName.contains(event.value)
+              : event.value == eventName);
     } catch (_) {}
 
     try {
